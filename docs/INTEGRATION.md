@@ -30,3 +30,23 @@ GitHub Actions runs these checks on integration branch pushes and pull requests.
 The merge preserves source history but is **not** an approved binary release. A genuine Kaggle TPU test is still needed to confirm Qwen, GLM, model IDs, notebook/kernel parity, SSE streaming, tool calling, start/stop and reconnect behavior. No cloud TPU/GCP execution has been performed during this integration.
 
 The draft model used by the GLM speculative decoder has third-party noncommercial research-use restrictions; review downstream licenses before commercial deployment.
+
+
+## Automated source synchronization (staged only)
+
+When this file and the workflow reach the default branch, GitHub Actions will
+check both ARahim3 (upstream) and Haz4rdovisk (companion) once each Monday at
+03:17 UTC. It creates draft pull requests with Git merge ancestry, but never
+merges into main or executes any Kaggle/GCP workload. Conflicts fail closed and
+require a manual fix. Existing open sync PRs prevent duplication.
+
+The workflow is NOT active on the current integration branch: scheduled
+workflows run only from GitHub's default branch. GitHub's repository setting
+"Allow GitHub Actions to create and approve pull requests" might need
+enabling by the owner. Pull requests created with GITHUB_TOKEN can trigger
+approval-required checks; review them and approve CI before merging.
+See GitHub's Actions token and scheduled-workflow documentation.
+
+The optional live endpoint smoke tool and its loopback-only regression tests
+are documented in docs/LIVE_SMOKE_TEST.md. It cannot prove real TPU health
+until run against a privately held live endpoint.

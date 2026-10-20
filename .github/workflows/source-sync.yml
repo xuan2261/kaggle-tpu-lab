@@ -1,0 +1,36 @@
+name: Propose source sync PRs
+
+# GitHub schedules and workflow_dispatch are active only after this file
+# reaches the default branch. Neither source can auto-merge.
+on:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  propose:
+    if: github.repository == 'xuan2261/kaggle-tpu-lab'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        source: [upstream, companion]
+    concurrency:
+      group: proposed-source-sync-${{ matrix.source }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check script syntax
+        run: bash -n scripts/propose_source_sync.sh
+      - name: Propose draft PR if source has new commits
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE: ${{ matrix.source }}
+        run: bash scripts/propose_source_sync.sh
