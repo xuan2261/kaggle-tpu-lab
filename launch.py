@@ -15,6 +15,7 @@ import argparse
 import base64
 import io
 import json
+import os
 import re
 import secrets
 import shutil
@@ -108,6 +109,16 @@ def engine_b64(pkg_dir):
     return base64.b64encode(buf.getvalue()).decode()
 
 
+def write_private_state(data):
+    """Persist session credentials with owner-only POSIX permissions."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(STATE_FILE, flags, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        json.dump(data, stream)
+    if os.name != "nt":
+        STATE_FILE.chmod(0o600)
+
+
 def cmd_serve(args):
     check_auth()
     user = kaggle_username(args.user)
@@ -191,10 +202,10 @@ def cmd_serve(args):
                 say(f"WARNING: {line.strip()} — the kernel will still run, "
                     "but may need to download weights / compile cold.")
 
-    STATE_FILE.write_text(json.dumps(
+    write_private_state(
         {"kernel": f"{user}/{slug}", "topic": topic, "api_key": api_key,
          "model": args.model, "submitted_at": int(time.time()),
-         "keepalive_min": args.keepalive_min}))
+         "keepalive_min": args.keepalive_min})
     say(f"Pushed. Kernel page: https://www.kaggle.com/code/{user}/{slug}")
     say("Kaggle takes a few minutes to provision the TPU and attach the "
         f"datasets; the endpoint is usually live ~{model['minutes']} min after the kernel starts.")
@@ -254,7 +265,8 @@ def render_event(ev):
         print("\n" + "=" * 66)
         print("  YOUR ENDPOINT IS LIVE")
         print(f"  base URL : {ev['endpoint']}")
-        print(f"  API key  : {ev['api_key']}")
+        # Read secrets from local state, never from public ntfy notifications.
+        print(f"  API key  : {load_state()['api_key']}")
         print(f"  model    : {ev['model']}   (context: {ev.get('max_model_len', '?')})")
         print("=" * 66)
         base = ev["endpoint"] if ev["endpoint"].endswith("/v1") else ev["endpoint"] + "/v1"
@@ -365,8 +377,8 @@ def cmd_build_env(args):
         out = (r.stdout or "") + (r.stderr or "")
         if r.returncode != 0 or "successfully pushed" not in out.lower():
             sys.exit(f"Push failed:\n{out.strip()}")
-    STATE_FILE.write_text(json.dumps({"kernel": f"{user}/{args.slug}", "topic": topic,
-                                      "api_key": "", "submitted_at": int(time.time())}))
+    write_private_state({"kernel": f"{user}/{args.slug}", "topic": topic,
+                         "api_key": "", "submitted_at": int(time.time())})
     say(f"Pushed {user}/{args.slug}. It serves each config once (~1.5 h total) and "
         "leaves xla_cache.tar / cloudflared / manifest.json in its output.")
     watch(f"{user}/{args.slug}", topic)

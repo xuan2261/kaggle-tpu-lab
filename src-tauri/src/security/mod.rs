@@ -45,28 +45,29 @@ pub fn sanitize_value(v: &mut serde_json::Value) {
     }
 }
 
-/// Mask a string for safe logging: replaces `sk-…` keys and long opaque
-/// tokens with a fixed marker.
+/// Redact generated Qwen and GLM keys without altering model identifiers.
 pub fn redact_for_log(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut rest = s;
-    while let Some(pos) = rest.find("sk-") {
-        out.push_str(&rest[..pos]);
-        out.push_str("sk-[redacted]");
-        let after = &rest[pos + 3..];
-        // Consume the token body (hex chars).
-        let take = after
-            .chars()
-            .take_while(|c| c.is_ascii_hexdigit())
-            .count();
-        rest = if take > 0 {
-            &after[take.min(after.len())..]
-        } else {
-            after
-        };
+    let mut output = s.to_owned();
+    for prefix in ["sk-", "glm-"] {
+        let mut safe = String::with_capacity(output.len());
+        let mut remaining = output.as_str();
+        while let Some(pos) = remaining.find(prefix) {
+            safe.push_str(&remaining[..pos]);
+            let body = &remaining[pos + prefix.len()..];
+            let count = body.bytes().take_while(|b| b.is_ascii_hexdigit()).count();
+            if count >= 12 {
+                safe.push_str(prefix);
+                safe.push_str("[redacted]");
+                remaining = &body[count..];
+            } else {
+                safe.push_str(prefix);
+                remaining = body;
+            }
+        }
+        safe.push_str(remaining);
+        output = safe;
     }
-    out.push_str(rest);
-    out
+    output
 }
 
 /// The UI-facing placeholder when a key exists but must not be shown.
@@ -97,6 +98,15 @@ mod tests {
         assert!(!r.contains("0123abcd"));
         assert!(r.contains("sk-[redacted]"));
         assert!(r.contains("https://x/v1"));
+    }
+
+    #[test]
+    fn redact_masks_glm_keys_but_preserves_model_id() {
+        let s = "api_key=glm-0123456789abcdef01234567 model=glm-5.3-flash";
+        let r = redact_for_log(s);
+        assert!(!r.contains("0123456789abcdef"));
+        assert!(r.contains("glm-[redacted]"));
+        assert!(r.contains("glm-5.3-flash"));
     }
 
     #[test]
