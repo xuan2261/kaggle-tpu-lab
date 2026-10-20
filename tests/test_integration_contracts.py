@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 from pathlib import Path
 import stat
 import tempfile
@@ -66,6 +67,49 @@ class IntegrationContracts(unittest.TestCase):
                          if line.lstrip().startswith('publish("ready",')]
                 self.assertEqual(len(ready), 1)
                 self.assertNotIn("api_key=", ready[0])
+
+    def test_progress_sanitizer_handles_nested_secrets(self):
+        """Execute only the pure helper AST without booting a TPU kernel."""
+        session_key = "glm-0123456789abcdef01234567"
+        for path in KERNELS:
+            with self.subTest(kernel=path.name):
+                module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+                funcs = [n for n in module.body if isinstance(n, ast.FunctionDef)
+                         and n.name == "_safe_progress_value"]
+                self.assertEqual(len(funcs), 1)
+                isolated = ast.fix_missing_locations(ast.Module(body=funcs, type_ignores=[]))
+                ns = {"CFG": {"api_key": session_key}, "re": re}
+                exec(compile(isolated, str(path), "exec"), ns)
+                public = ns["_safe_progress_value"]({
+                    "api_key": session_key,
+                    "nested": {
+                        "access_token": "redact this too",
+                        "tail": "Authorization: Bearer " + session_key,
+                        "safe": ["sk-abcdef1234567890", "value"],
+                    },
+                })
+                serialized = json.dumps(public)
+                self.assertNotIn(session_key, serialized)
+                self.assertNotIn("redact this too", serialized)
+                self.assertNotIn("sk-abcdef1234567890", serialized)
+                self.assertIn("value", serialized)
+
+    def test_notebooks_match_kernel_progress_sanitizer(self):
+        for kernel, notebook in zip(KERNELS, NOTEBOOKS):
+            with self.subTest(notebook=notebook.name):
+                kernel_module = ast.parse(kernel.read_text(encoding="utf-8"))
+                nb = json.loads(notebook.read_text(encoding="utf-8"))
+                nb_source = "\n".join("".join(cell.get("source", []))
+                                       for cell in nb["cells"]
+                                       if cell.get("cell_type") == "code")
+                nb_module = ast.parse(nb_source)
+                for name in ("_safe_progress_value", "publish"):
+                    def find_fn(module):
+                        found = [node for node in module.body
+                                 if isinstance(node, ast.FunctionDef) and node.name == name]
+                        self.assertEqual(len(found), 1)
+                        return ast.dump(found[0], include_attributes=False)
+                    self.assertEqual(find_fn(kernel_module), find_fn(nb_module))
 
     def test_launcher_uses_current_glm_profile(self):
         source = (ROOT / "launch.py").read_text(encoding="utf-8")
