@@ -4,6 +4,8 @@ Run open models on Kaggle's free TPU v5e-8 and get a public endpoint that speaks
 OpenAI and Anthropic APIs. Point Claude Code, Codex CLI, opencode or anything else at it.
 No GPU, no cloud bill, about twenty minutes from pressing Run to a URL.
 
+> Integration fork: upstream inference recipes are maintained by [ARahim3/kaggle-tpu-lab](https://github.com/ARahim3/kaggle-tpu-lab). The Windows Companion is credited to [Haz4rdovisk/kaggle-tpu-lab](https://github.com/Haz4rdovisk/kaggle-tpu-lab).
+
 Each model has its own folder with a run-all Kaggle notebook, the kernel script behind
 it, and a write-up of how it works and what we measured.
 
@@ -41,9 +43,10 @@ Each folder README has the exact lines for Claude Code, Codex CLI and opencode.
 ## From a terminal
 
 ```bash
-git clone https://github.com/ARahim3/kaggle-tpu-lab
+git clone https://github.com/xuan2261/kaggle-tpu-lab
 cd kaggle-tpu-lab
-python launch.py serve            # Qwen3.8-27B today; --model picks another recipe once there is one
+python launch.py serve                       # Qwen3.8-27B
+python launch.py serve --model glm53-flash   # GLM-5.3-Flash
 ```
 
 `launch.py` pushes the kernel with the Kaggle CLI and follows its progress; `status`
@@ -54,6 +57,25 @@ and `stop` do what they say.
 The GLM-5.3-Flash recipe also runs on a rented TPU VM, the same machine as Kaggle's (`v5litepod-8`) or a `v6e-8`,
 with no queue and no nine-hour cap: [gcp/](gcp/) has the guide and the three scripts (environment, datasets, run).
 
+## Desktop companion (Windows)
+
+This integration includes a Tauri 2 + Rust + React/TypeScript tray app in `src-tauri/` and
+`src/`. It reuses the root `launch.py`, follows Kaggle + ntfy state, probes the live
+endpoint, and exposes start/stop/settings from the tray UI.
+
+The companion manages both **Qwen3.8-27B** and **GLM-5.3-Flash**. Each model has its own
+persisted launch profile: Qwen exposes its context/MTP/fast-start/async-scheduling knobs,
+while GLM exposes context/streams/reasoning and uses the launcher's serve-dataset default.
+The active model is stored in the launcher state file, so re-attaching never mistakes one
+model's endpoint for the other. Qwen publishes an OpenAI `/v1` base directly; GLM publishes
+the tunnel root, and the companion normalizes it to the same OpenAI-compatible base URL.
+When the endpoint is live, the Companion exposes a harness-agnostic Connect card for copying
+the normalized base URL, API key, served model name, or a ready-to-paste environment setup.
+
+For the desktop app, keep this repository checkout and its `.venv` available on the
+machine; the app invokes that Python environment and `launch.py` rather than bundling a
+second copy of the Kaggle launcher.
+
 ## Adding a model
 
 One folder at the top level, named after the model: `README.md` with the numbers and the
@@ -61,6 +83,10 @@ how, `kernel/` with the serving script, `notebook/` with the run-all notebook ge
 from it, plus whatever the recipe needs (a patch, an engine). The launcher and the
 notebook share the same config block, so a setting changed in one place means the same
 thing in the other.
+
+## Integration policy
+
+The inference engine and model recipes track ARahim3 upstream; the Windows companion is retained from Haz4rdovisk. Merge and test upstream changes on a separate integration branch, then open a pull request against `main`. Do not automatically overwrite companion profiles or deploy Kaggle/GCP workloads during synchronization.
 
 ## License
 

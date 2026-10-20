@@ -3,3 +3,14 @@ __pycache__/
 .DS_Store
 out/
 *.log
+node_modules/
+dist/
+src-tauri/target/
+.maestri/
+.commandcode/
+kaggle.json
+.venv/
+.env
+.env.*
+!.env.example
+!.env.sample
