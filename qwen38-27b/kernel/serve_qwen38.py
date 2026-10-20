@@ -122,12 +122,13 @@ def banner(step, title, note=""):
 
 def publish(phase, **extra):
     """Progress event: always logged; also pushed to ntfy if a topic is set."""
-    log(f"PHASE {phase}", json.dumps(extra) if extra else "")
+    safe_extra = {k: v for k, v in extra.items() if k.lower() not in ("api_key", "apikey", "token", "authorization", "password", "secret")}
+    log(f"PHASE {phase}", json.dumps(safe_extra) if safe_extra else "")
     if not CFG["ntfy_topic"]:
         return
     try:
         body = {"topic": CFG["ntfy_topic"], "title": f"kaggle-tpu-lab {phase}",
-                "message": json.dumps({"phase": phase, **extra})}
+                "message": json.dumps({"phase": phase, **safe_extra})}
         req = urllib.request.Request("https://ntfy.sh", data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json"})
         urllib.request.urlopen(req, timeout=10)
@@ -901,7 +902,7 @@ log("#      -d '{\"model\": \"" + CFG["served_model_name"] + "\", \"messages\": 
     "\"content\": \"Hello!\"}], \"chat_template_kwargs\": {\"reasoning_effort\": \"low\"}}'")
 log(f"#  Serving for up to {CFG['keepalive_min']} min, then this cell exits on its own.")
 log("#" * 70)
-publish("ready", endpoint=(f"{url}/v1" if url else None), api_key=CFG["api_key"],
+publish("ready", endpoint=(f"{url}/v1" if url else None),
         model=CFG["served_model_name"], max_model_len=CFG["max_model_len"],
         keepalive_min=CFG["keepalive_min"], startup_secs=startup)
 
