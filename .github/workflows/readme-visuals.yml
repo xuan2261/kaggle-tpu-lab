@@ -59,13 +59,35 @@ jobs:
               assert width >= 500 and height >= 800 and len(data) >= 20000, (path, width, height, len(data))
               print(f"{path}: {width}x{height}; {len(data)} bytes; browser preview")
           PY
+      - name: Validate and rasterize editable vector illustrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check cairosvg==2.7.1
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          import cairosvg
+          import struct
+          for stem in ("hero", "architecture"):
+              source = Path(f"docs/assets/{stem}.svg")
+              root = ET.fromstring(source.read_bytes())
+              assert root.tag == "{http://www.w3.org/2000/svg}svg"
+              target = Path(f"docs/assets/{stem}.png")
+              cairosvg.svg2png(url=str(source), write_to=str(target))
+              raw = target.read_bytes()
+              assert raw.startswith(b"\\x89PNG\\r\\n\\x1a\\n")
+              width, height = struct.unpack(">II", raw[16:24])
+              assert width == 1200 and height >= 330 and len(raw) >= 12000
+              print(f"{target}: {width}x{height}; {len(raw)} bytes")
+          PY
       - name: Commit screenshots to integration branch only
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- docs/assets/companion-qwen38-27b-preview.png docs/assets/companion-glm53-flash-preview.png
+          git add -- docs/assets/companion-qwen38-27b-preview.png docs/assets/companion-glm53-flash-preview.png docs/assets/hero.png docs/assets/architecture.png
           git diff --cached --check
           git commit -m "docs(images): capture Companion Qwen and GLM mock preview"
           git push origin HEAD:refs/heads/integration/companion-upstream-20261020
