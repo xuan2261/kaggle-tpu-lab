@@ -1,0 +1,71 @@
+name: Capture README mock screenshots
+
+on:
+  push:
+    branches:
+      - integration/companion-upstream-20261020
+    paths:
+      - .github/workflows/readme-visuals.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    if: github.repository == 'xuan2261/kaggle-tpu-lab' && github.ref == 'refs/heads/integration/companion-upstream-20261020'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Capture Qwen and GLM preview screens (no Kaggle connection)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run preview -- --host 127.0.0.1 --port 4173 > "$RUNNER_TEMP/vite-preview.log" 2>&1 &
+          VITE_PID=$!
+          trap 'kill "$VITE_PID" 2>/dev/null || true' EXIT
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:4173/ >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:4173/ >/dev/null
+          CHROME="$(command -v google-chrome || command -v chromium || command -v google-chrome-stable)"
+          test -n "$CHROME"
+          mkdir -p docs/assets
+          for model in qwen38-27b glm53-flash; do
+            url="http://127.0.0.1:4173/?model=$model&mock=ready&static=1"
+            "$CHROME" --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --virtual-time-budget=2500 --dump-dom "$url" > "$RUNNER_TEMP/$model.html" 2> /dev/null
+            grep -q 'PREVIEW' "$RUNNER_TEMP/$model.html"
+            grep -q 'READY' "$RUNNER_TEMP/$model.html"
+            "$CHROME" --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --hide-scrollbars --force-device-scale-factor=1 --virtual-time-budget=3500 --window-size=610,1020 --screenshot="docs/assets/companion-$model-preview.png" "$url" > /dev/null 2>&1
+          done
+          python - <<'PY'
+          from pathlib import Path
+          import struct
+          for name in ("qwen38-27b", "glm53-flash"):
+              path = Path(f"docs/assets/companion-{name}-preview.png")
+              data = path.read_bytes()
+              assert data.startswith(b"\x89PNG\r\n\x1a\n"), path
+              width, height = struct.unpack(">II", data[16:24])
+              assert width >= 500 and height >= 800 and len(data) >= 20000, (path, width, height, len(data))
+              print(f"{path}: {width}x{height}; {len(data)} bytes; browser preview")
+          PY
+      - name: Commit screenshots to integration branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- docs/assets/companion-qwen38-27b-preview.png docs/assets/companion-glm53-flash-preview.png
+          git diff --cached --check
+          git commit -m "docs(images): capture Companion Qwen and GLM mock preview"
+          git push origin HEAD:refs/heads/integration/companion-upstream-20261020
