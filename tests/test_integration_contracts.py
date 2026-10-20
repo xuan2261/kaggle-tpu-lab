@@ -99,10 +99,15 @@ class IntegrationContracts(unittest.TestCase):
             with self.subTest(notebook=notebook.name):
                 kernel_module = ast.parse(kernel.read_text(encoding="utf-8"))
                 nb = json.loads(notebook.read_text(encoding="utf-8"))
-                nb_source = "\n".join("".join(cell.get("source", []))
-                                       for cell in nb["cells"]
-                                       if cell.get("cell_type") == "code")
-                nb_module = ast.parse(nb_source)
+                kernel_cells = ["".join(cell.get("source", []))
+                                for cell in nb["cells"]
+                                if cell.get("cell_type") == "code"
+                                and "def publish(phase, **extra):" in "".join(cell.get("source", []))]
+                self.assertEqual(len(kernel_cells), 1)
+                nb_source = kernel_cells[0]
+                # Jupyter writes this complete Python script via a cell magic.
+                self.assertTrue(nb_source.startswith("%%writefile "))
+                nb_module = ast.parse(nb_source.split("\n", 1)[1])
                 for name in ("_safe_progress_value", "publish"):
                     def find_fn(module):
                         found = [node for node in module.body
