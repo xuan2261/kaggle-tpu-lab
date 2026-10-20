@@ -120,14 +120,35 @@ def banner(step, title, note=""):
     log("=" * 70)
 
 
+def _safe_progress_value(value):
+    """Remove nested credentials and embedded session keys from public progress."""
+    if isinstance(value, dict):
+        sensitive = ("token", "secret", "password", "authorization", "api_key", "apikey")
+        return {
+            str(k): _safe_progress_value(v)
+            for k, v in value.items()
+            if str(k).lower() not in ("key", "auth")
+            and not any(part in str(k).lower() for part in sensitive)
+        }
+    if isinstance(value, (tuple, list)):
+        return [_safe_progress_value(v) for v in value]
+    if isinstance(value, str):
+        session_key = CFG.get("api_key") or ""
+        redacted = value.replace(session_key, "[redacted]") if session_key else value
+        return re.sub(r"(?<![a-zA-Z0-9])(?:sk|glm)-[0-9a-fA-F]{12,}(?![0-9a-fA-F])",
+                      "[redacted]", redacted)
+    return value
+
+
 def publish(phase, **extra):
     """Progress event: always logged; also pushed to ntfy if a topic is set."""
-    log(f"PHASE {phase}", json.dumps(extra) if extra else "")
+    safe_extra = _safe_progress_value(extra)
+    log(f"PHASE {phase}", json.dumps(safe_extra) if safe_extra else "")
     if not CFG["ntfy_topic"]:
         return
     try:
         body = {"topic": CFG["ntfy_topic"], "title": f"kaggle-tpu-lab {phase}",
-                "message": json.dumps({"phase": phase, **extra})}
+                "message": json.dumps({"phase": phase, **safe_extra})}
         req = urllib.request.Request("https://ntfy.sh", data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json"})
         urllib.request.urlopen(req, timeout=10)
@@ -392,19 +413,69 @@ if n_entries:
 else:
     publish("cache-missing", note="cold compile: expect ~10 extra minutes")
 
+
+def complete_bf16_repo(path):
+    """Validate a mounted bf16 weights mirror. Returns (ok, detail).
+
+    Strictly reject an invalid/missing safetensors index or missing shards.
+    The Hugging Face size cross-check is best-effort when the API is reachable.
+    """
+    idx = os.path.join(path, "model.safetensors.index.json")
+    try:
+        with open(idx) as f:
+            weight_map = json.load(f)["weight_map"]
+    except Exception as e:
+        return False, f"index missing/invalid ({e})"
+    if not isinstance(weight_map, dict) or not weight_map:
+        return False, "index has empty weight_map"
+    shards = sorted(set(weight_map.values()))
+    missing = [v for v in shards if not os.path.isfile(os.path.join(path, v))]
+    if missing:
+        return False, f"{len(missing)} shard(s) missing (e.g. {missing[0]})"
+    total_local = sum(os.path.getsize(os.path.join(path, v)) for v in shards)
+    if not any("mtp" in n.lower() for n in weight_map):
+        log("   warn: no MTP tensor names in index — serving without speculative decoding")
+    try:
+        url = f"https://huggingface.co/api/models/{CFG['hf_model_id']}?blobs=true"
+        with urllib.request.urlopen(url, timeout=15) as r:
+            siblings = json.loads(r.read().decode())["siblings"]
+        api_sizes = {s["rfilename"].split("/")[-1]: s.get("size")
+                     for s in siblings if isinstance(s, dict)}
+        total_api = sum(api_sizes[b] for b in (os.path.basename(v) for v in shards)
+                        if isinstance(api_sizes.get(b), int))
+        if total_api and abs(total_local - total_api) > 1024:
+            return False, f"size mismatch: local {total_local} vs HF {total_api}"
+    except Exception as e:
+        log(f"   note: HF size check skipped ({e})")
+    return True, f"{len(shards)} shards, {total_local / 1e9:.1f} GB verified"
+
+
 # ---------------- 3. weights ----------------
 banner(3, "Model weights", "55 GB bf16 safetensors")
 weights_slug = CFG["weights_dataset"].split("/")[-1]
 model_path = find_input(weights_slug)
+detail = "no local mirror"
 if model_path and os.path.exists(os.path.join(model_path, "config.json")):
-    publish("weights-mounted", path=model_path)
-else:
+    ok, detail = complete_bf16_repo(model_path)
+    if ok:
+        publish("weights-mounted", path=model_path, detail=detail)
+    else:
+        log(f"   mirror incomplete ({detail}) -> downloading from HF")
+        model_path = None
+if not model_path:
     publish("weights-download", model=CFG["hf_model_id"],
-            note="attach the weights dataset to skip this (~5 min parallel download)")
+            note="attach the weights dataset to skip this (~5 min parallel download)",
+            reason=detail)
     t = time.time()
     from huggingface_hub import snapshot_download
     model_path = snapshot_download(CFG["hf_model_id"], allow_patterns=[
-        "*.safetensors", "*.json", "*.txt", "tokenizer*", "vocab*", "merges*"])
+        "*.safetensors", "*.json", "*.txt", "*.jinja", "tokenizer*", "vocab*", "merges*"])
+    try:
+        dl = [f for f in os.listdir(model_path) if f.endswith(".safetensors")]
+        total = sum(os.path.getsize(os.path.join(model_path, f)) for f in dl)
+        log(f"   downloaded {len(dl)} shards, {total / 1e9:.1f} GB")
+    except Exception as e:
+        log(f"   (download inventory skipped: {e})")
     publish("weights-downloaded", secs=int(time.time() - t))
 
 
@@ -851,7 +922,7 @@ log("#      -d '{\"model\": \"" + CFG["served_model_name"] + "\", \"messages\": 
     "\"content\": \"Hello!\"}], \"chat_template_kwargs\": {\"reasoning_effort\": \"low\"}}'")
 log(f"#  Serving for up to {CFG['keepalive_min']} min, then this cell exits on its own.")
 log("#" * 70)
-publish("ready", endpoint=(f"{url}/v1" if url else None), api_key=CFG["api_key"],
+publish("ready", endpoint=(f"{url}/v1" if url else None),
         model=CFG["served_model_name"], max_model_len=CFG["max_model_len"],
         keepalive_min=CFG["keepalive_min"], startup_secs=startup)
 

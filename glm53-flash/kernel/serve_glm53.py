@@ -137,13 +137,34 @@ def banner(step, title, note=""):
     log("=" * 70)
 
 
+def _safe_progress_value(value):
+    """Remove nested credentials and embedded session keys from public progress."""
+    if isinstance(value, dict):
+        sensitive = ("token", "secret", "password", "authorization", "api_key", "apikey")
+        return {
+            str(k): _safe_progress_value(v)
+            for k, v in value.items()
+            if str(k).lower() not in ("key", "auth")
+            and not any(part in str(k).lower() for part in sensitive)
+        }
+    if isinstance(value, (tuple, list)):
+        return [_safe_progress_value(v) for v in value]
+    if isinstance(value, str):
+        session_key = CFG.get("api_key") or ""
+        redacted = value.replace(session_key, "[redacted]") if session_key else value
+        return re.sub(r"(?<![a-zA-Z0-9])(?:sk|glm)-[0-9a-fA-F]{12,}(?![0-9a-fA-F])",
+                      "[redacted]", redacted)
+    return value
+
+
 def publish(phase, **extra):
     """Progress event: always logged; also pushed to ntfy if a topic is set."""
-    log(f"PHASE {phase}", json.dumps(extra) if extra else "")
+    safe_extra = _safe_progress_value(extra)
+    log(f"PHASE {phase}", json.dumps(safe_extra) if safe_extra else "")
     if not CFG["ntfy_topic"]:
         return
     try:
-        body = {"topic": CFG["ntfy_topic"], "title": f"kaggle-tpu-lab {phase}", "message": json.dumps({"phase": phase, **extra})}
+        body = {"topic": CFG["ntfy_topic"], "title": f"kaggle-tpu-lab {phase}", "message": json.dumps({"phase": phase, **safe_extra})}
         req = urllib.request.Request("https://ntfy.sh", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
         urllib.request.urlopen(req, timeout=10)
     except Exception as e:  # noqa: BLE001
@@ -1407,7 +1428,7 @@ log(f"#    ANTHROPIC_SMALL_FAST_MODEL={MODEL} CLAUDE_CODE_MAX_CONTEXT_TOKENS={CF
 log("#  OpenAI-compatible clients: base URL " + endpoint + "/v1, model " + MODEL)
 log(f"#  Serving for up to {CFG['keepalive_min']} min, then this cell exits on its own.")
 log("#" * 70)
-publish("ready", endpoint=endpoint, api_key=API_KEY, model=MODEL, max_model_len=CFG["max_len"],
+publish("ready", endpoint=endpoint, model=MODEL, max_model_len=CFG["max_len"],
         keepalive_min=CFG["keepalive_min"], startup_secs=int(time.time() - T0))
 
 if globals().get("SERVE_FOREVER", True):
