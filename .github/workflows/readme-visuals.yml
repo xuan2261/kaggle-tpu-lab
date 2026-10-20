@@ -76,7 +76,7 @@ jobs:
               target = Path(f"docs/assets/{stem}.png")
               cairosvg.svg2png(url=str(source), write_to=str(target))
               raw = target.read_bytes()
-              assert raw.startswith(b"\\x89PNG\\r\\n\\x1a\\n")
+              assert raw.startswith(bytes((137, 80, 78, 71, 13, 10, 26, 10)))
               width, height = struct.unpack(">II", raw[16:24])
               assert width == 1200 and height >= 330 and len(raw) >= 12000
               print(f"{target}: {width}x{height}; {len(raw)} bytes")
