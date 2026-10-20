@@ -213,7 +213,7 @@ const mock = {
       },
       glm: {
         context: 262144,
-        streams: 4,
+        streams: 3,
         thinking: "low",
         textOnly: false,
       },

@@ -43,7 +43,7 @@ impl Default for GlmSettings {
     fn default() -> Self {
         Self {
             context: 262144,
-            streams: 4,
+            streams: 3,
             thinking: "low".into(),
             text_only: false,
         }
@@ -102,8 +102,8 @@ impl Settings {
                 if !Self::CONTEXTS.contains(&self.glm.context) {
                     return Err("GLM context must be 131072 or 262144".into());
                 }
-                if !(1..=8).contains(&self.glm.streams) {
-                    return Err("GLM streams must be between 1 and 8".into());
+                if !(1..=3).contains(&self.glm.streams) {
+                    return Err("GLM streams must be between 1 and 3".into());
                 }
                 if !Self::GLM_THINKING_LEVELS.contains(&self.glm.thinking.as_str()) {
                     return Err(format!(
@@ -191,7 +191,13 @@ impl Settings {
     fn from_json(text: &str) -> Option<Settings> {
         let value: Value = serde_json::from_str(text).ok()?;
         if value.get("qwen").is_some() || value.get("glm").is_some() || value.get("model").is_some() {
-            return serde_json::from_value(value).ok();
+            let mut parsed: Settings = serde_json::from_value(value).ok()?;
+            // The old companion permitted 4-8 GLM streams; at 262k the
+            // current upstream engine has room for only three.
+            if parsed.glm.streams > 3 {
+                parsed.glm.streams = 3;
+            }
+            return Some(parsed);
         }
 
         // v0.3.2 and earlier stored one Qwen-only profile at the root. Preserve
@@ -262,7 +268,7 @@ mod tests {
         let joined = s.serve_args().join(" ");
         assert!(joined.contains("--model glm53-flash"));
         assert!(joined.contains("--max-len 262144"));
-        assert!(joined.contains("--streams 4"));
+        assert!(joined.contains("--streams 3"));
         assert!(joined.contains("--reasoning-effort low"));
         assert!(!joined.contains("--mtp"));
         assert!(!joined.contains("--fast-start"));
@@ -282,6 +288,23 @@ mod tests {
         assert!(!s.qwen.fast_start);
         assert!(!s.qwen.text_only);
         assert_eq!(s.keepalive_min, 120);
+    }
+
+    #[test]
+    fn glm_saved_legacy_streams_migrate_to_three() {
+        let s = Settings::from_json(r#"{"model":"glm53-flash","glm":{"streams":4}}"#).unwrap();
+        assert_eq!(s.glm.streams, 3);
+        s.validate().unwrap();
+    }
+
+    #[test]
+    fn glm_streams_above_three_are_rejected() {
+        let mut s = Settings::default();
+        s.model = ModelId::Glm53Flash;
+        s.glm.streams = 4;
+        assert!(s.validate().is_err());
+        s.glm.streams = 3;
+        s.validate().unwrap();
     }
 
     #[test]

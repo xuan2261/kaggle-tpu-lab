@@ -17,7 +17,7 @@ const DEFAULTS: Settings = {
   },
   glm: {
     context: 262144,
-    streams: 4,
+    streams: 3,
     thinking: "low",
     textOnly: false,
   },
@@ -59,8 +59,8 @@ export default function SettingsModal() {
     } else {
       if (base.glm.context !== 131072 && base.glm.context !== 262144)
         return setError("GLM context must be 131,072 or 262,144.");
-      if (Number.isNaN(base.glm.streams) || base.glm.streams < 1 || base.glm.streams > 8)
-        return setError("GLM streams must be between 1 and 8.");
+      if (Number.isNaN(base.glm.streams) || base.glm.streams < 1 || base.glm.streams > 3)
+        return setError("GLM streams must be between 1 and 3.");
       if (!["high", "low"].includes(base.glm.thinking))
         return setError("GLM reasoning effort must be high or low.");
     }
@@ -189,7 +189,7 @@ export default function SettingsModal() {
                 <input
                   type="number"
                   min={1}
-                  max={8}
+                  max={3}
                   value={base.glm.streams}
                   onChange={(e) => patchGlm({ streams: Number(e.target.value) })}
                 />
