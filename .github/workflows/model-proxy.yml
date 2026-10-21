@@ -1,0 +1,33 @@
+name: Kaggle Model Proxy adapter tests
+
+on:
+  push:
+    branches:
+      - 'feature/kaggle-model-proxy-*'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'tools/kaggle_model_proxy.py'
+      - 'tests/test_kaggle_model_proxy.py'
+      - 'docs/KAGGLE_MODEL_PROXY.md'
+      - '.github/workflows/model-proxy.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  hermetic-adapter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile adapter
+        run: python -m py_compile tools/kaggle_model_proxy.py tests/test_kaggle_model_proxy.py
+      - name: Run credential, route and quota guard tests
+        run: python -m unittest discover -s tests -p 'test_kaggle_model_proxy.py' -v
+      - name: Assert no Kaggle session or model request was started
+        run: echo "Hermetic loopback-only test suite. No Kaggle credentials or billable calls."
