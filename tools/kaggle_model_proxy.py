@@ -61,6 +61,10 @@ def _model_list(raw: str) -> tuple[str, ...]:
 def _kaggle_origin(url: str) -> str:
     parts = urlsplit(url.strip().rstrip("/"))
     hostname = (parts.hostname or "").lower()
+    try:
+        port = parts.port
+    except ValueError as exc:
+        raise ConfigError("Invalid MODEL_PROXY_URL port") from exc
     if (
         parts.scheme != "https"
         or not hostname
@@ -72,7 +76,7 @@ def _kaggle_origin(url: str) -> str:
         or parts.password is not None
         or parts.query
         or parts.fragment
-        or parts.port not in (None, 443)
+        or port not in (None, 443)
     ):
         raise ConfigError("MODEL_PROXY_URL must be a Kaggle-owned HTTPS endpoint")
     path = parts.path.rstrip("/")
@@ -173,6 +177,8 @@ class LocalHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.close_connection = True
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -290,20 +296,22 @@ class LocalHandler(BaseHTTPRequestHandler):
                 self.send_header("Connection", "close")
                 self.end_headers()
                 self.close_connection = True
-                while True:
-                    chunk = response.read1(16384) if hasattr(response, "read1") else response.read(16384)
-                    if not chunk:
-                        break
-                    self.wfile.write(chunk)
-                    self.wfile.flush()
+                try:
+                    while True:
+                        chunk = response.read1(16384) if hasattr(response, "read1") else response.read(16384)
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError, TimeoutError, OSError):
+                    # Headers already went out; never send a second JSON response.
+                    self.close_connection = True
         except HTTPError as exc:
             code = exc.code if 400 <= exc.code <= 599 else 502
             self._error(code, "Kaggle Model Proxy rejected the request (see quota/model permissions)")
         except (URLError, TimeoutError, OSError):
             # Do not surface upstream exception text: it may contain the signed request URL.
             self._error(502, "Cannot reach Kaggle Model Proxy")
-        except (BrokenPipeError, ConnectionResetError):
-            pass
 
     def do_OPTIONS(self):
         self._error(405, "Browser-origin access is disabled")
