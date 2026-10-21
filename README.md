@@ -19,7 +19,7 @@
 This repository brings together **[ARahim3's Kaggle TPU inference recipes](https://github.com/ARahim3/kaggle-tpu-lab)** and the **[Windows desktop Companion by Haz4rdovisk](https://github.com/Haz4rdovisk/kaggle-tpu-lab)**. Run an open model in a Kaggle TPU session and expose an API compatible with OpenAI- or Anthropic-style clients, including Codex CLI, Claude Code and OpenCode.
 
 > [!IMPORTANT]
-> **Integration build — not a production release.** The merge and automated CI checks are under review in [PR #2](https://github.com/xuan2261/kaggle-tpu-lab/pull/2). Use the integration branch to try this combined code. A successful build or browser preview is **not** proof that a live Kaggle TPU session or installed Windows app has passed end-to-end acceptance.
+> **Source integration is merged, but live QA is incomplete.** [PR #2](https://github.com/xuan2261/kaggle-tpu-lab/pull/2) brought the inference and Companion sources into `main`. Automated tests and browser previews do **not** prove that a Kaggle TPU session or installed Windows app passed end-to-end acceptance. The optional Benchmarks Model Proxy adapter is under separate review.
 
 ## What is included?
 
@@ -28,9 +28,14 @@ This repository brings together **[ARahim3's Kaggle TPU inference recipes](https
 | **Qwen3.8-27B** | BF16 inference via vLLM-TPU, with a bundled MTP rollback patch | [Recipe and limits](qwen38-27b/README.md) · [Notebook](qwen38-27b/notebook/qwen38-tpu-serve.ipynb) |
 | **GLM-5.3-Flash** | JAX/Pallas serving engine, quantized experts, speculative decoding; upstream supports up to three concurrent streams at 262k context | [Recipe and limits](glm53-flash/README.md) · [Notebook](glm53-flash/notebook/glm53-tpu-serve.ipynb) |
 | **Windows Companion** | Tauri 2 desktop/tray interface for model selection, launch settings, session state and connection information | [Rust backend](src-tauri/src/) · [React UI](src/) |
+| **Kaggle Benchmarks Model Proxy (optional)** | Separate localhost adapter for Kaggle's existing OpenAI/Anthropic interfaces; consumes AI Models USD quota, not TPU hours | [Local adapter guide](docs/KAGGLE_MODEL_PROXY.md) |
 | **Optional cloud route** | GLM on a rented Google Cloud TPU VM instead of a Kaggle notebook | [GCP guide](gcp/README.md) **(billable)** |
 
 **Performance and capacity:** Both upstream recipes document configurations reaching a 262,144-token context and provide their own benchmarks. Those numbers are **upstream measurements**, not independently reproduced performance results for this integration fork. Kaggle TPU access, quota, startup duration and model behavior can vary.
+
+## Kaggle Benchmarks Model Proxy (optional)
+
+Kaggle also offers hosted **Benchmarks Model Proxy** inference that uses your account's separate **Daily/Monthly AI Models USD quota**. This does **not** start Qwen/GLM on your TPU. Kaggle already provides both OpenAI- and Anthropic-format endpoints; the optional [localhost adapter](docs/KAGGLE_MODEL_PROXY.md) wraps those existing endpoints with model allowlist, token-expiry and developer-request caps. It requires your own authorized Kaggle Benchmarks credentials and must not be exposed as a public or resale API.
 
 ## Windows Companion
 
@@ -70,7 +75,7 @@ A running session is **temporary**, not an always-on free API. Its address and A
 Install Python 3.9+ and the Kaggle CLI, then authenticate using the documented Kaggle credentials method. Do not commit credentials to Git.
 
 ```bash
-git clone --branch integration/companion-upstream-20261020 https://github.com/xuan2261/kaggle-tpu-lab.git
+git clone https://github.com/xuan2261/kaggle-tpu-lab.git
 cd kaggle-tpu-lab
 python -m pip install kaggle
 
@@ -86,7 +91,7 @@ Run **one** of the `serve` commands for the model you want. `status` and `stop` 
 
 ### C. Windows desktop development
 
-The Companion requires Git, Node.js, Rust/MSVC build tools, WebView2 and an available Python environment containing the Kaggle CLI. From a checkout of the integration branch:
+The Companion requires Git, Node.js, Rust/MSVC build tools, WebView2 and an available Python environment containing the Kaggle CLI. From a checkout of the current repository:
 
 ```powershell
 py -3 -m venv .venv
@@ -124,9 +129,9 @@ The smoke tool checks authenticated model discovery, chat completions, OpenAI-st
 
 [Integration checks](https://github.com/xuan2261/kaggle-tpu-lab/actions/workflows/integration.yml) include Python contract tests, a mock HTTP API test, the frontend production build, Rust unit tests on Windows, selected GLM JAX CPU tests and QA-only Windows installer packaging. These are **automated checks**, not live TPU benchmarks or actual desktop interaction tests.
 
-The following remain **release blockers**: full Kaggle TPU start/stop and reconnect verification for both models, real endpoint/tool/stream testing, review of secret handling and licensing, plus installation and visual QA on a Windows machine. See the active [integration PR](https://github.com/xuan2261/kaggle-tpu-lab/pull/2) for current outcomes rather than treating old CI results as permanently valid.
+The following remain **release blockers**: full Kaggle TPU start/stop and reconnect verification for both models, real endpoint/tool/stream testing, review of secret handling and licensing, plus installation and visual QA on a Windows machine. See the merged [integration PR](https://github.com/xuan2261/kaggle-tpu-lab/pull/2) for historical evidence; verify fresh CI and live results before releasing.
 
-After an approved integration merge, the staged [source-sync workflow](.github/workflows/source-sync.yml) can periodically propose **draft PRs** from both source repositories. It will not automatically merge, force-push, run a Kaggle job or provision billable resources.
+The [source-sync workflow](.github/workflows/source-sync.yml) is present on `main` and is designed to propose **draft PRs** from both sources. It does not automatically merge, force-push, run Kaggle jobs or provision billable resources; operating it may require GitHub Actions permissions.
 
 ## Documentation and troubleshooting
 
@@ -134,6 +139,7 @@ After an approved integration merge, the staged [source-sync workflow](.github/w
 - [GLM engine, benchmark methodology, dependencies and known limitations](glm53-flash/README.md)
 - [Integration provenance, compatibility and safety requirements](docs/INTEGRATION.md)
 - [API smoke-test procedure](docs/LIVE_SMOKE_TEST.md)
+- [Kaggle Benchmarks Model Proxy local-only adapter](docs/KAGGLE_MODEL_PROXY.md)
 - [Google Cloud TPU VM setup (paid)](gcp/README.md)
 - [Contributor guidance](CONTRIBUTING.md)
 
