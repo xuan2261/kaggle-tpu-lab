@@ -42,6 +42,12 @@ class MockKaggleHandler(BaseHTTPRequestHandler):
             "key": self.headers.get("x-api-key"),
             "version": self.headers.get("anthropic-version"),
         })
+        if request.get("redirect"):
+            self.send_response(302)
+            self.send_header("Location", "http://127.0.0.1:{}/unexpected".format(self.server.server_port))
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         if self.path == "/openapi/v1/chat/completions" and request.get("stream"):
             data = (b'data: {"choices":[{"delta":{"content":"OK"},"index":0}]}\n\n'
                     b'data: [DONE]\n\n')
@@ -98,6 +104,7 @@ class ConfigTests(unittest.TestCase):
             "https://mp-staging.kaggle.net.evil.example/models",
             "https://someone:password@mp-staging.kaggle.net/models",
             "https://mp-staging.kaggle.net/models?api_key=secret",
+            "https://mp-staging.kaggle.net:invalid/models",
         ):
             with self.subTest(url=url):
                 self.write_config(url=url)
@@ -243,6 +250,13 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status, 503)
         self.assertIn(b"expired", content)
         self.assertFalse(self.upstream.received)
+
+    def test_upstream_redirect_does_not_send_kaggle_token_to_other_host(self):
+        status, _ = self.call("/v1/chat/completions",
+                              {"model": MODEL, "messages": [], "redirect": True})
+        self.assertEqual(status, 502)
+        self.assertEqual(len(self.upstream.received), 1)
+        self.assertEqual(self.upstream.received[0]["auth"], "Bearer " + REMOTE_KEY)
 
     def test_local_request_cap(self):
         for _ in range(2):
