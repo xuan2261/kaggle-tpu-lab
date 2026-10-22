@@ -43,29 +43,36 @@ kaggle auth login
 kaggle benchmarks quota --format json
 ~~~
 
-Create the Kaggle-generated environment file in the project root. To avoid
-creating sample benchmark files in the repository, initialize from your
-temporary directory and supply an **absolute** destination:
+Keep the Kaggle-generated credentials **outside the repository**. A project
+checkout under `C:\Work` may inherit read or modify permissions for other
+Windows accounts. The adapter defaults to your private user-profile path
+`~/.kaggle/model-proxy.env`. Initialize from a temporary directory to avoid
+leaving generated example tasks in the repository:
 
 ~~~powershell
-$projectRoot = (Get-Location).Path
+$privateDir = Join-Path $env:USERPROFILE ".kaggle"
+New-Item -ItemType Directory -Force -Path $privateDir | Out-Null
+$privateFile = Join-Path $privateDir "model-proxy.env"
 Push-Location $env:TEMP
 try {
-    kaggle benchmarks init -y --env-file (Join-Path $projectRoot ".env.model-proxy")
+    kaggle benchmarks init -y --env-file $privateFile
 } finally {
     Pop-Location
 }
 ~~~
 
 The CLI may also create a sample benchmark and reference document in the
-temporary directory. The model proxy key and expiration are stored in
-the **ignored** .env.model-proxy file. NEVER commit that file, post its contents,
-upload it to an issue, or enter either key in a chat.
+temporary directory. The model proxy key and expiration are stored at
+`$privateFile` outside Git. Inspect its Windows ACL using
+`icacls $privateFile`; do not use it if other ordinary accounts have access.
+The adapter requires the credential path to remain under your user profile
+on Windows. This reduces risk but is **not** an independent audit of the ACL.
+NEVER commit the credential file, post its contents or enter either key in chat.
 
 On Linux/macOS, also restrict file permissions:
 
 ~~~bash
-chmod 600 .env.model-proxy
+chmod 600 ~/.kaggle/model-proxy.env
 ~~~
 
 Check the configuration without making a model request:
@@ -107,6 +114,8 @@ KAGGLE_GATEWAY_KEY, rejects browser origins, does not enable CORS and does not
 log credentials or request bodies. It refuses remote models not present in the
 Kaggle-generated allowlist, refuses expired Kaggle credentials, and rejects
 large requests or output-token budgets above the configured local cap.
+It forwards the sanitized `anthropic-beta` negotiation header for approved
+Anthropic requests and restricts multi-choice OpenAI generation to `n=1`.
 
 The default request cap is 20 accepted requests per process. **This is NOT
 a USD cost limit.** Read Kaggle Benchmarks quota before and during any
@@ -153,7 +162,8 @@ When Kaggle's short-lived key expires, stop new requests and explicitly renew
 it in your private terminal:
 
 ~~~powershell
-kaggle benchmarks auth -y --env-file .env.model-proxy
+$privateFile = Join-Path (Join-Path $env:USERPROFILE ".kaggle") "model-proxy.env"
+kaggle benchmarks auth -y --env-file $privateFile
 python tools/kaggle_model_proxy.py doctor
 ~~~
 
@@ -168,7 +178,7 @@ kaggle benchmarks init instead; auth alone need not create LLMS_AVAILABLE.
 | 401 | Wrong/missing independent local gateway key |
 | 403 | Browser origin denied or model not in LLMS_AVAILABLE |
 | 413 | Request body too large |
-| 422 | Output budget exceeds developer-set cap |
+| 422 | Output budget, multi-choice or Anthropic negotiation header is invalid |
 | 429 | Local request count reached |
 | 503 | Missing/unsafe file or expired Kaggle proxy key |
 | 502 | Network error or unexpected upstream response |

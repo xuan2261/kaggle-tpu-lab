@@ -25,7 +25,7 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 MAX_BODY_BYTES = 2 * 1024 * 1024
-DEFAULT_ENV_FILE = ".env.model-proxy"
+DEFAULT_ENV_FILE = Path.home() / ".kaggle" / "model-proxy.env"
 ROUTES = {
     "/v1/chat/completions": ("/openapi/v1/chat/completions", "openai"),
     "/v1/responses": ("/openapi/v1/responses", "openai"),
@@ -94,13 +94,28 @@ def load_config(path: Path) -> ProxyConfig:
     try:
         if path.is_symlink():
             raise ConfigError("Credentials file must not be a symlink")
-        info = path.stat()
-        if not stat.S_ISREG(info.st_mode) or info.st_size > 65536:
-            raise ConfigError("Credentials must be a small regular file")
-        if os.name != "nt" and stat.S_IMODE(info.st_mode) & 0o077:
-            raise ConfigError("Restrict credentials permissions first: chmod 600")
-        contents = path.read_text(encoding="utf-8")
-    except OSError as exc:
+        if os.name == "nt":
+            # A checkout under C:\Work can inherit broad Users/Authenticated
+            # Users ACLs. Never accept credentials outside the user profile.
+            if not path.resolve(strict=True).is_relative_to(Path.home().resolve()):
+                raise ConfigError("On Windows, store Kaggle credentials inside your user profile")
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+        fd = os.open(path, flags)
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 65536:
+                raise ConfigError("Credentials must be a small regular file")
+            if os.name != "nt" and stat.S_IMODE(info.st_mode) & 0o077:
+                raise ConfigError("Restrict credentials permissions first: chmod 600")
+            with os.fdopen(fd, "r", encoding="utf-8-sig") as stream:
+                fd = -1
+                contents = stream.read(65537)
+            if len(contents) > 65536:
+                raise ConfigError("Credentials file exceeds size limit")
+        finally:
+            if fd >= 0:
+                os.close(fd)
+    except (OSError, UnicodeError) as exc:
         raise ConfigError("Cannot read credentials file; run Kaggle benchmarks init") from exc
     values = {}
     for line in contents.splitlines():
@@ -167,6 +182,11 @@ class LocalGateway(ThreadingHTTPServer):
 class LocalHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server: LocalGateway
+
+    def setup(self):
+        super().setup()
+        # Bound idle client connections; no unbounded localhost slowloris.
+        self.connection.settimeout(30)
 
     def log_message(self, format, *args):
         # Never log paths, request bodies or credentials.
@@ -264,11 +284,29 @@ class LocalHandler(BaseHTTPRequestHandler):
         }[self.path]
         present = [k for k in token_field if k in request]
         if not present:
-            request[token_field[0]] = min(256, self.server.max_output_tokens)
+            fallback = ("max_completion_tokens"
+                        if self.path == "/v1/chat/completions"
+                        and request["model"].startswith("openai/")
+                        else token_field[0])
+            request[fallback] = min(256, self.server.max_output_tokens)
         for field in present:
             value = request[field]
             if type(value) is not int or value < 1 or value > self.server.max_output_tokens:
                 self._error(422, "Output token count exceeds local development cap")
+                return
+        if self.path == "/v1/chat/completions":
+            for field in ("n", "best_of"):
+                if field in request and (type(request[field]) is not int or request[field] != 1):
+                    self._error(422, "Local development supports exactly one completion choice")
+                    return
+        if self.path == "/v1/messages":
+            version = self.headers.get("anthropic-version") or "2023-06-01"
+            beta = self.headers.get("anthropic-beta")
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", version):
+                self._error(422, "Invalid anthropic-version header")
+                return
+            if beta is not None and not re.fullmatch(r"[A-Za-z0-9._, -]{1,512}", beta):
+                self._error(422, "Invalid anthropic-beta header")
                 return
         with self.server.request_lock:
             if self.server.requests_made >= self.server.max_requests:
@@ -279,7 +317,9 @@ class LocalHandler(BaseHTTPRequestHandler):
         headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
         if protocol == "anthropic":
             headers["x-api-key"] = config.api_key
-            headers["anthropic-version"] = self.headers.get("anthropic-version") or "2023-06-01"
+            headers["anthropic-version"] = version
+            if beta:
+                headers["anthropic-beta"] = beta
         else:
             headers["Authorization"] = "Bearer " + config.api_key
         upstream = Request(config.origin + target, json.dumps(request).encode("utf-8"),
@@ -344,14 +384,16 @@ def command_line(argv=None) -> int:
         try:
             payload = json.loads(result.stdout)
             rows = payload if isinstance(payload, list) else payload.get("rows", payload.get("quotas", []))
-            if not isinstance(rows, list) or not rows:
+            if not isinstance(rows, list) or not rows or any(
+                not isinstance(row, dict)
+                or not all(k in row for k in ("period", "used", "remaining", "total", "refillAt"))
+                for row in rows
+            ):
                 raise ValueError("Unexpected quota payload")
             for row in rows:
-                if isinstance(row, dict):
-                    print("{}: used={} remaining={} total={} refillAt={}".format(
-                        row.get("period", "?"), row.get("used", "?"),
-                        row.get("remaining", "?"), row.get("total", "?"),
-                        row.get("refillAt", "?")))
+                print("{}: used={} remaining={} total={} refillAt={}".format(
+                    row["period"], row["used"], row["remaining"],
+                    row["total"], row["refillAt"]))
             return 0
         except (ValueError, AttributeError):
             print("Quota response format changed; run kaggle benchmarks quota directly", file=sys.stderr)

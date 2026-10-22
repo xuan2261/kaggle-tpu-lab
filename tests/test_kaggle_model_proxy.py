@@ -41,6 +41,7 @@ class MockKaggleHandler(BaseHTTPRequestHandler):
             "path": self.path, "data": request, "auth": self.headers.get("Authorization"),
             "key": self.headers.get("x-api-key"),
             "version": self.headers.get("anthropic-version"),
+            "beta": self.headers.get("anthropic-beta"),
         })
         if request.get("redirect"):
             self.send_response(302)
@@ -98,6 +99,25 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaises(gateway.ConfigError):
             gateway.load_config(self.path)
 
+    def test_default_credentials_are_outside_repository(self):
+        self.assertEqual(gateway.DEFAULT_ENV_FILE,
+                         Path.home() / ".kaggle" / "model-proxy.env")
+
+    def test_invalid_file_encoding_fails_closed(self):
+        self.write_config()
+        with self.path.open("ab") as out:
+            out.write(b"\xff")
+        with self.assertRaises(gateway.ConfigError):
+            gateway.load_config(self.path)
+
+    @unittest.skipUnless(os.name == "nt", "Windows profile boundary check")
+    def test_windows_rejects_credentials_outside_home(self):
+        self.write_config()
+        fake_home = self.path.parent / "other-user"
+        with patch.object(gateway.Path, "home", return_value=fake_home):
+            with self.assertRaises(gateway.ConfigError):
+                gateway.load_config(self.path)
+
     def test_rejects_host_spoofing_and_protocol_downgrade(self):
         for url in (
             "http://mp-staging.kaggle.net/models",
@@ -147,6 +167,14 @@ class ConfigTests(unittest.TestCase):
         run.assert_called_once()
         self.assertEqual(run.call_args.args[0],
                          ["kaggle", "benchmarks", "quota", "--format", "json"])
+
+    def test_quota_command_rejects_partial_schema(self):
+        payload = '[{"period":"Daily","used":"$1"}]'
+        with patch.object(gateway.subprocess, "run",
+                          return_value=SimpleNamespace(returncode=0, stdout=payload)):
+            with contextlib.redirect_stderr(io.StringIO()):
+                result = gateway.command_line(["quota"])
+        self.assertEqual(result, 2)
 
 
 class ServerTests(unittest.TestCase):
@@ -216,11 +244,41 @@ class ServerTests(unittest.TestCase):
     def test_anthropic_passes_key_and_version(self):
         status, content = self.call("/v1/messages",
                                     {"model": MODEL, "messages": [{"role": "user", "content": "hi"}],
-                                     "max_tokens": 20}, scheme="anthropic")
+                                     "max_tokens": 20}, scheme="anthropic",
+                                    extra={"anthropic-beta": "prompt-caching-2024-07-31"})
         self.assertEqual(status, 200)
         self.assertIn(b"content", content)
         self.assertEqual(self.upstream.received[0]["key"], REMOTE_KEY)
         self.assertEqual(self.upstream.received[0]["version"], "2023-06-01")
+        self.assertEqual(self.upstream.received[0]["beta"], "prompt-caching-2024-07-31")
+
+    def test_rejects_malformed_anthropic_beta_without_upstream_call(self):
+        status, _ = self.call("/v1/messages",
+                              {"model": MODEL, "messages": [], "max_tokens": 30},
+                              scheme="anthropic",
+                              extra={"anthropic-beta": "invalid!"})
+        self.assertEqual(status, 422)
+        self.assertEqual(self.gate.requests_made, 0)
+        self.assertFalse(self.upstream.received)
+
+    def test_openai_defaults_completion_budget_by_provider(self):
+        self.config = valid_config(origin=self.config.origin,
+                                   models=(MODEL, "openai/gpt-oss-120b"))
+        status, _ = self.call("/v1/chat/completions",
+                              {"model": "openai/gpt-oss-120b", "messages": []})
+        self.assertEqual(status, 200)
+        self.assertIn("max_completion_tokens", self.upstream.received[0]["data"])
+        self.assertNotIn("max_tokens", self.upstream.received[0]["data"])
+
+    def test_multiple_choices_cannot_multiply_token_budget(self):
+        for param in ("n", "best_of"):
+            with self.subTest(param=param):
+                status, _ = self.call("/v1/chat/completions",
+                                      {"model": MODEL, "messages": [],
+                                       "max_tokens": 24, param: 4})
+                self.assertEqual(status, 422)
+        self.assertEqual(self.gate.requests_made, 0)
+        self.assertFalse(self.upstream.received)
 
     def test_openai_responses_path(self):
         status, _ = self.call("/v1/responses", {"model": MODEL, "input": "hi"})
