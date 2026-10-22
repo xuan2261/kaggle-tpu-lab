@@ -32,16 +32,18 @@ The merge preserves source history but is **not** an approved binary release. A 
 The draft model used by the GLM speculative decoder has third-party noncommercial research-use restrictions; review downstream licenses before commercial deployment.
 
 
-## Automated source synchronization (staged only)
+## Automated source synchronization (review-gated)
 
-When this file and the workflow reach the default branch, GitHub Actions will
-check both ARahim3 (upstream) and Haz4rdovisk (companion) once each Monday at
+The synchronization workflow now exists on the default `main` branch.
+When enabled and permitted by GitHub Actions settings, it checks both
+ARahim3 (upstream) and Haz4rdovisk (companion) once each Monday at
 03:17 UTC. It creates draft pull requests with Git merge ancestry, but never
 merges into main or executes any Kaggle/GCP workload. Conflicts fail closed and
 require a manual fix. Existing open sync PRs prevent duplication.
 
-The workflow is NOT active on the current integration branch: scheduled
-workflows run only from GitHub's default branch. GitHub's repository setting
+Being present on `main` does not prove the scheduled workflow has run
+successfully. Check the GitHub Actions run history and generated draft PRs.
+GitHub's repository setting
 "Allow GitHub Actions to create and approve pull requests" might need
 enabling by the owner. Pull requests created with GITHUB_TOKEN can trigger
 approval-required checks; review them and approve CI before merging.
