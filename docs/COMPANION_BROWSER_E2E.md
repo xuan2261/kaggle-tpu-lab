@@ -51,3 +51,7 @@ repository permissions. It uses **no Kaggle credentials** or model API calls.
 Actual Windows Tauri UI, native tray behavior, local credential integration,
 real Kaggle start/stop, Anthropic/OpenAI streaming and TPU/GCP allocation
 remain independent release gates.
+
+User-supplied screenshots of the **native** Windows Companion have since been
+reviewed separately. See [native visual QA](NATIVE_GUI_VISUAL_QA_20261023.md)
+for screenshot-supported observations and the native interaction gaps.
