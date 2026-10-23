@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowCounterClockwise, X } from "@phosphor-icons/react";
 import type { ModelId, Settings } from "../types/session";
 import { useApp, actions } from "../lib/store";
@@ -27,6 +27,15 @@ export default function SettingsModal() {
   const { settings, showSettings, busy } = useApp();
   const [draft, setDraft] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // The dialog stays mounted while hidden. Discard uncommitted changes when
+    // closing it, so Cancel and backdrop-close really cancel the draft.
+    if (!showSettings) {
+      setDraft(null);
+      setError(null);
+    }
+  }, [showSettings]);
 
   if (!showSettings) return null;
   const base = draft ?? settings ?? DEFAULTS;
