@@ -27,9 +27,11 @@ def localhost_url(value: str) -> str:
     return value.rstrip("/")
 
 
-def open_preview(browser, base: str, model: str, phase: str, *, width: int = 610):
+def open_preview(browser, base: str, model: str, phase: str, *,
+                 width: int = 610, scale: float = 1.0):
     context = browser.new_context(
         viewport={"width": width, "height": 960},
+        device_scale_factor=scale,
         permissions=["clipboard-read", "clipboard-write"],
     )
     page = context.new_page()
@@ -84,7 +86,8 @@ def case_glm_profile_and_validation(browser, base):
         for label in ("GLM-5.3-Flash", "3 streams", "READY", "glm-5.3-flash"):
             if label not in body:
                 raise AssertionError(f"Expected GLM READY label absent: {label}")
-        page.get_by_role("button", name="Change").click()
+        trigger = page.get_by_role("button", name="Change")
+        trigger.click()
         modal = page.get_by_role("dialog", name="Settings")
         expect(modal).to_be_visible()
         streams = modal.get_by_label("Streams")
@@ -97,6 +100,7 @@ def case_glm_profile_and_validation(browser, base):
         streams.fill("2")
         modal.get_by_role("button", name="Save").click()
         expect(modal).not_to_be_visible()
+        expect(trigger).to_be_focused()
         expect(page.get_by_text("2 streams")).to_be_visible()
         verify_safety(page, errors, outside)
     finally:
@@ -106,19 +110,86 @@ def case_glm_profile_and_validation(browser, base):
 def case_cancel_discards_settings(browser, base):
     ctx, page, errors, outside = open_preview(browser, base, "glm53-flash", "ready")
     try:
-        page.get_by_role("button", name="Change").click()
+        trigger = page.get_by_role("button", name="Change")
+        trigger.click()
         modal = page.get_by_role("dialog", name="Settings")
         streams = modal.get_by_label("Streams")
         expect(streams).to_have_value("3")
         streams.fill("2")
         modal.get_by_role("button", name="Cancel").click()
         expect(modal).not_to_be_visible()
-        page.get_by_role("button", name="Change").click()
+        expect(trigger).to_be_focused()
+        trigger.click()
         reopened = page.get_by_role("dialog", name="Settings")
         expect(reopened.get_by_label("Streams")).to_have_value("3")
         verify_safety(page, errors, outside)
     finally:
         ctx.close()
+
+
+def case_settings_keyboard_navigation(browser, base):
+    """ARIA modal: focus enters, stays trapped, Escape cancels and restores focus."""
+    ctx, page, errors, outside = open_preview(browser, base, "glm53-flash", "ready")
+    try:
+        trigger = page.get_by_role("button", name="Change")
+        trigger.focus()
+        trigger.press("Enter")
+        dialog = page.get_by_role("dialog", name="Settings")
+        expect(dialog).to_be_visible()
+        close_button = dialog.get_by_role("button", name="Close settings")
+        expect(close_button).to_be_focused()
+        page.keyboard.press("Shift+Tab")
+        expect(dialog.get_by_role("button", name="Save")).to_be_focused()
+        page.keyboard.press("Tab")
+        expect(close_button).to_be_focused()
+
+        dialog.get_by_label("Streams").fill("2")
+        page.keyboard.press("Escape")
+        expect(dialog).not_to_be_visible()
+        expect(trigger).to_be_focused()
+        trigger.press("Enter")
+        expect(page.get_by_role("dialog", name="Settings")
+               .get_by_label("Streams")).to_have_value("3")
+        verify_safety(page, errors, outside)
+    finally:
+        ctx.close()
+
+
+def case_settings_compact_viewports(browser, base):
+    """CSS layout stress checks; these do not claim to change native Windows DPI."""
+    for width, scale in ((520, 1.0), (520, 1.25), (520, 1.5),
+                         (416, 1.0), (347, 1.0)):
+        ctx, page, errors, outside = open_preview(
+            browser, base, "glm53-flash", "ready", width=width, scale=scale,
+        )
+        try:
+            page.get_by_role("button", name="Change").click()
+            dialog = page.get_by_role("dialog", name="Settings")
+            expect(dialog).to_be_visible()
+            for label, element in (
+                ("Settings dialog", dialog),
+                ("Save action", dialog.get_by_role("button", name="Save")),
+                ("Cancel action", dialog.get_by_role("button", name="Cancel")),
+            ):
+                rect = element.bounding_box()
+                if rect is None or rect["x"] < -1 or rect["y"] < -1 or (
+                    rect["x"] + rect["width"] > width + 1
+                ) or rect["y"] + rect["height"] > 961:
+                    raise AssertionError(
+                        f"{label} clips viewport {width}px at {scale} DPR"
+                    )
+            scroll_width, viewport_width = page.evaluate(
+                "() => [document.documentElement.scrollWidth, window.innerWidth]"
+            )
+            if scroll_width > viewport_width + 1:
+                raise AssertionError(
+                    f"Unexpected horizontal overflow at {width}px/{scale} DPR"
+                )
+            page.keyboard.press("Escape")
+            expect(dialog).not_to_be_visible()
+            verify_safety(page, errors, outside)
+        finally:
+            ctx.close()
 
 
 def case_start_and_stop(browser, base):
@@ -137,6 +208,32 @@ def case_start_and_stop(browser, base):
         expect(page.get_by_role("button", name="Start Qwen3.8-27B")).to_be_visible()
         if "TPU session stopped" not in page.locator("body").inner_text():
             raise AssertionError("Stop action did not update the mock session state")
+        verify_safety(page, errors, outside)
+    finally:
+        ctx.close()
+
+
+def case_stop_confirmation_keyboard(browser, base):
+    """A destructive confirmation must keep focus and permit Escape to cancel."""
+    ctx, page, errors, outside = open_preview(browser, base, "qwen38-27b", "idle")
+    try:
+        page.get_by_role("button", name="Start Qwen3.8-27B").click()
+        opener = page.get_by_role("button", name="Stop session")
+        opener.focus()
+        opener.press("Enter")
+        dialog = page.get_by_role("dialog", name="Stop the TPU session?")
+        expect(dialog).to_be_visible()
+        cancel = dialog.get_by_role("button", name="Cancel")
+        expect(cancel).to_be_focused()
+        page.keyboard.press("Shift+Tab")
+        expect(dialog.get_by_role("button", name="Stop session")).to_be_focused()
+        page.keyboard.press("Tab")
+        expect(cancel).to_be_focused()
+        page.keyboard.press("Escape")
+        expect(dialog).not_to_be_visible()
+        expect(opener).to_be_focused()
+        # Escape never confirms the destructive action.
+        expect(opener).to_be_visible()
         verify_safety(page, errors, outside)
     finally:
         ctx.close()
@@ -179,7 +276,10 @@ def main(argv=None) -> int:
         ("Qwen READY and mock model clipboard", case_qwen_ready),
         ("GLM READY/settings validation/save", case_glm_profile_and_validation),
         ("Cancel settings discards changes", case_cancel_discards_settings),
+        ("Settings keyboard focus trap and Escape cancel", case_settings_keyboard_navigation),
+        ("Settings stays usable at compact CSS widths and DPR", case_settings_compact_viewports),
         ("Start / cancel stop / confirm stop", case_start_and_stop),
+        ("Stop confirmation keyboard trap and Escape", case_stop_confirmation_keyboard),
         ("Failed session error visibility", case_failed_state),
         ("Theme toggle persists", case_theme),
     ]
