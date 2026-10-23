@@ -45,9 +45,10 @@ conformance test.
   with a native WebView2 window; background capture was inconclusive because
   the window hid on focus loss.
 - The committed [browser-mock suite](../tools/e2e_companion_preview.py)
-  independently checks six journeys: Qwen/GLM READY, invalid GLM stream count
-  and save, Settings Cancel, Start/Stop with confirmation, failed session
-  display, and theme persistence. These run in a browser **mock** backend and
+  independently checks nine journeys: Qwen/GLM READY, invalid GLM stream count
+  and save, Settings Cancel, keyboard focus trapping and Escape, compact CSS
+  widths/DPR, Start/Stop with confirmation, Stop keyboard cancellation,
+  failed session display, and theme persistence. These run in a browser **mock** backend and
   do **not** prove native Tauri IPC or real Kaggle session behavior.
 - Offline mock gateway contract tests cover OpenAI Chat Completions and
   Anthropic Messages. Two additional regressions cover Anthropic SSE event
@@ -76,3 +77,33 @@ conformance test.
 
 **Safety:** No extra Kaggle inference requests, TPU starts, GCP provisioning,
 or release deployment are part of this screenshot review.
+
+## Follow-up keyboard and DPI-oriented QA
+
+On 2026-10-23, additional browser automation revealed two missing keyboard
+contracts: **Settings** did not initially move focus inside its dialog or
+close on Escape, and **Stop confirmation** did not trap Tab or support Escape.
+Both failed targeted browser regression checks before repair. A Stop-modal
+focus-restoration failure was additionally caught by the tests and corrected.
+
+The frontend now moves focus into both dialogs, traps Tab/Shift+Tab, lets
+Escape cancel when no save/stop action is in progress, and returns focus to
+the opening control when that control still exists. The destructive Stop
+confirmation initially focuses **Cancel**, not Stop.
+
+**Browser-mock checks: 9/9 PASS.** Settings, Save and Cancel were also verified
+inside the simulated CSS viewport at 520px (DPR 1.0, 1.25, 1.5) and narrower
+416px/347px widths, without horizontal overflow or uncaught JavaScript
+errors. The simulated device-pixel ratio **is not** a Windows OS DPI change.
+Physical display scaling and minimum WCAG text contrast remain unverified.
+
+An isolated-profile Tauri run successfully started the native process and a
+WebView2 window, but the local WebView2 debug port did not open, and the
+native-window screenshot helper could not obtain reliable pixels. The
+computer-use accessibility tree contained panes but not actionable settings
+controls. Hence automated native Save/Cancel persistence and tray behavior
+remain **NOT VERIFIED**, not PASS. There was no Kaggle session state and no
+Start TPU action. The test process was shut down; a residual temporary QA
+cache folder under `%TEMP%` could not be fully deleted because Windows
+reported a nonempty NVIDIA cache subfolder. No user Settings file was
+written in the isolated profile.

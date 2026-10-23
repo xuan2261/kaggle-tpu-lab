@@ -34,9 +34,17 @@ does not make external network requests.
 2. GLM READY state, three-stream default, rejection of invalid stream count
    and successful saving of an allowed value.
 3. **Settings Cancel** discards unsaved changes after reopening the modal.
-4. Idle → mock Start → queued → Stop confirmation → mock stopped session.
-5. Failed-session error visibility and ability to restart.
-6. Theme selection survives a browser reload.
+4. **Settings keyboard navigation:** focus moves into the dialog, Tab and
+   Shift+Tab stay inside, Escape discards drafts, and focus returns to Change
+   after Cancel, Save or Escape.
+5. **Compact layouts:** Settings, Save and Cancel remain visible at 520 CSS px
+   with DPR 1.0/1.25/1.5, and at 416/347 CSS px. These are viewport stress
+   checks, **not** tests of physical Windows display-scaling changes.
+6. Idle → mock Start → queued → Stop confirmation → mock stopped session.
+7. **Stop confirmation keyboard safety:** Cancel is focused first, Tab stays in
+   the dialog, Escape cancels without stopping, and focus returns to Stop.
+8. Failed-session error visibility and ability to restart.
+9. Theme selection survives a browser reload.
 
 These are **browser E2E tests of the mock frontend**, not API or TPU E2E.
 The `source` implementation in `src/lib/backend.ts` intentionally returns

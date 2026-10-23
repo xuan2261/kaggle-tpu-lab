@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowCounterClockwise, X } from "@phosphor-icons/react";
 import type { ModelId, Settings } from "../types/session";
 import { useApp, actions } from "../lib/store";
@@ -27,6 +27,12 @@ export default function SettingsModal() {
   const { settings, showSettings, busy } = useApp();
   const [draft, setDraft] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const busyRef = useRef(busy != null);
+
+  useEffect(() => {
+    busyRef.current = busy != null;
+  }, [busy]);
 
   useEffect(() => {
     // The dialog stays mounted while hidden. Discard uncommitted changes when
@@ -35,6 +41,53 @@ export default function SettingsModal() {
       setDraft(null);
       setError(null);
     }
+  }, [showSettings]);
+
+  useEffect(() => {
+    if (!showSettings) return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const opener = document.activeElement instanceof HTMLElement
+      ? document.activeElement : null;
+    const focusable = () => Array.from(dialog.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+    )).filter((element) => element.getClientRects().length > 0);
+
+    // Move keyboard focus into the modal; prevent Tab from reaching the page
+    // behind it. Return focus to the opener on Cancel, Save or Escape.
+    (focusable()[0] ?? dialog).focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (!busyRef.current) {
+          event.preventDefault();
+          event.stopPropagation();
+          actions.closeSettings();
+        }
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const elements = focusable();
+      if (!elements.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !dialog.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      if (opener?.isConnected) opener.focus();
+    };
   }, [showSettings]);
 
   if (!showSettings) return null;
@@ -78,10 +131,12 @@ export default function SettingsModal() {
 
   return (
     <div
+      ref={dialogRef}
       className="overlay"
       role="dialog"
       aria-modal="true"
       aria-labelledby="settings-title"
+      tabIndex={-1}
       onClick={(e) => {
         if (e.target === e.currentTarget) actions.closeSettings();
       }}
