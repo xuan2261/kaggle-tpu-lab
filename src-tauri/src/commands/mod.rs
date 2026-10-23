@@ -149,15 +149,110 @@ pub fn save_settings(
     settings: crate::state::settings::Settings,
 ) -> Result<crate::state::settings::Settings, String> {
     let st = app.state::<AppState>();
+    let mut guard = st.settings.lock().unwrap();
+    persist_settings(&mut guard, settings, |candidate| candidate.save())
+}
+
+/// Commit to memory only after validation and successful disk persistence.
+/// A failed write must not make the running app disagree with the saved file.
+fn persist_settings(
+    current: &mut crate::state::settings::Settings,
+    settings: crate::state::settings::Settings,
+    persist: impl FnOnce(&crate::state::settings::Settings) -> Result<(), String>,
+) -> Result<crate::state::settings::Settings, String> {
     settings.validate()?;
     if let Some(root) = &settings.project_root {
         if !std::path::Path::new(root).is_dir() {
             return Err(format!("project_root does not exist: {root}"));
         }
     }
-    let mut guard = st.settings.lock().unwrap();
-    *guard = settings.clone();
-    drop(guard);
-    settings.save()?;
+    persist(&settings)?;
+    *current = settings.clone();
     Ok(settings)
+}
+
+#[cfg(test)]
+mod settings_persistence_tests {
+    use super::*;
+    use crate::state::model::ModelId;
+    use crate::state::settings::Settings;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct IsolatedFile(std::path::PathBuf);
+    impl IsolatedFile {
+        fn new() -> Self {
+            static NEXT: AtomicUsize = AtomicUsize::new(0);
+            let id = NEXT.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir().join(format!(
+                "ktl-settings-command-test-{}-{id}",
+                std::process::id(),
+            ));
+            std::fs::create_dir(&dir).expect("fresh QA directory");
+            Self(dir)
+        }
+        fn path(&self) -> std::path::PathBuf {
+            self.0.join("settings.json")
+        }
+    }
+    impl Drop for IsolatedFile {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn failing_native_disk_save_does_not_mutate_memory() {
+        let fixture = IsolatedFile::new();
+        // Force the actual write to fail: the parent path is a regular file.
+        let blocker = fixture.0.join("not-a-folder");
+        std::fs::write(&blocker, b"guard").unwrap();
+        let impossible_path = blocker.join("settings.json");
+        let mut current = Settings::default();
+        let mut requested = current.clone();
+        requested.keepalive_min = 210;
+        let result = persist_settings(&mut current, requested, |settings| {
+            settings.save_to_path(&impossible_path)
+        });
+        assert!(result.is_err());
+        assert_eq!(current.keepalive_min, 480);
+        assert_eq!(current.model, ModelId::Qwen38_27b);
+        assert!(!impossible_path.exists());
+    }
+
+    #[test]
+    fn successful_native_disk_save_updates_memory_and_survives_reload() {
+        let fixture = IsolatedFile::new();
+        let mut current = Settings::default();
+        let mut requested = current.clone();
+        requested.model = ModelId::Glm53Flash;
+        requested.glm.streams = 2;
+        requested.keepalive_min = 300;
+        let returned = persist_settings(&mut current, requested, |settings| {
+            settings.save_to_path(&fixture.path())
+        })
+        .unwrap();
+        assert_eq!(current.model, ModelId::Glm53Flash);
+        assert_eq!(current.glm.streams, 2);
+        assert_eq!(returned.keepalive_min, 300);
+        let reloaded = Settings::load_from_path(&fixture.path());
+        assert_eq!(reloaded.model, ModelId::Glm53Flash);
+        assert_eq!(reloaded.glm.streams, 2);
+        assert_eq!(reloaded.keepalive_min, 300);
+    }
+
+    #[test]
+    fn invalid_native_settings_never_reach_persistence() {
+        let mut current = Settings::default();
+        let mut requested = current.clone();
+        requested.model = ModelId::Glm53Flash;
+        requested.glm.streams = 4;
+        let mut persisted = false;
+        let result = persist_settings(&mut current, requested, |_| {
+            persisted = true;
+            Ok(())
+        });
+        assert!(result.is_err());
+        assert!(!persisted);
+        assert_eq!(current.model, ModelId::Qwen38_27b);
+    }
 }
