@@ -54,8 +54,28 @@ class MockKaggleHandler(BaseHTTPRequestHandler):
             data = (b'data: {"choices":[{"delta":{"content":"OK"},"index":0}]}\n\n'
                     b'data: [DONE]\n\n')
             content_type = "text/event-stream"
+        elif self.path == "/anthropic/v1/messages" and request.get("stream"):
+            data = (
+                b'event: message_start\n'
+                b'data: {"type":"message_start","message":{"type":"message","content":[]}}\n\n'
+                b'event: content_block_delta\n'
+                b'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"OK"}}\n\n'
+                b'event: message_stop\n'
+                b'data: {"type":"message_stop"}\n\n'
+            )
+            content_type = "text/event-stream"
         elif self.path == "/anthropic/v1/messages":
             data = json.dumps({"content": [{"type": "text", "text": "OK"}]}).encode()
+            content_type = "application/json"
+        elif self.path == "/openapi/v1/chat/completions" and request.get("tools"):
+            data = json.dumps({
+                "choices": [{"index": 0, "message": {
+                    "role": "assistant", "content": None,
+                    "tool_calls": [{"id": "call_mock", "type": "function",
+                                    "function": {"name": "echo",
+                                                 "arguments": '{"text":"OK"}'}}],
+                }}]
+            }).encode()
             content_type = "application/json"
         else:
             data = json.dumps({"choices": [{"message": {"content": "OK"}}]}).encode()
@@ -293,6 +313,57 @@ class ServerTests(unittest.TestCase):
                                  {"model": MODEL, "messages": [], "stream": True, "max_tokens": 24})
         self.assertEqual(status, 200)
         self.assertIn(b"data: [DONE]", data)
+
+    def test_anthropic_sse_events_pass_through_unchanged(self):
+        expected = (
+            b'event: message_start\n'
+            b'data: {"type":"message_start","message":{"type":"message","content":[]}}\n\n'
+            b'event: content_block_delta\n'
+            b'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"OK"}}\n\n'
+            b'event: message_stop\n'
+            b'data: {"type":"message_stop"}\n\n'
+        )
+        status, raw = self.call(
+            "/v1/messages",
+            {"model": MODEL, "messages": [{"role": "user", "content": "Hi"}],
+             "max_tokens": 32, "stream": True},
+            scheme="anthropic",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(raw, expected)
+        self.assertEqual(self.upstream.received[0]["path"], "/anthropic/v1/messages")
+        self.assertEqual(self.upstream.received[0]["key"], REMOTE_KEY)
+        self.assertEqual(self.gate.requests_made, 1)
+
+    def test_openai_tool_request_and_tool_response_pass_through(self):
+        tools = [{
+            "type": "function",
+            "function": {
+                "name": "echo",
+                "description": "Echo harmless text",
+                "parameters": {"type": "object",
+                               "properties": {"text": {"type": "string"}},
+                               "required": ["text"]},
+            },
+        }]
+        body = {
+            "model": MODEL,
+            "messages": [{"role": "user", "content": "Use echo for OK"}],
+            "tools": tools,
+            "tool_choice": "required",
+            "max_tokens": 32,
+        }
+        status, raw = self.call("/v1/chat/completions", body)
+        self.assertEqual(status, 200)
+        reply = json.loads(raw)
+        call = reply["choices"][0]["message"]["tool_calls"][0]
+        self.assertEqual(call["function"]["name"], "echo")
+        self.assertEqual(json.loads(call["function"]["arguments"]), {"text": "OK"})
+        self.assertEqual(self.upstream.received[0]["data"], body)
+        self.assertEqual(self.upstream.received[0]["auth"], "Bearer " + REMOTE_KEY)
+        self.assertIsNone(self.upstream.received[0]["key"])
+        self.assertNotIn(LOCAL_KEY.encode(), raw)
+        self.assertEqual(self.gate.requests_made, 1)
 
     def test_unknown_model_and_too_many_tokens_rejected_without_charge(self):
         status, _ = self.call("/v1/chat/completions", {"model": "openai/not-authorized", "messages": []})
