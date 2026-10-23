@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::state::model::ModelId;
 
@@ -182,10 +182,18 @@ impl Settings {
     }
 
     pub fn load() -> Settings {
-        let Some(text) = Self::file_path().and_then(|p| std::fs::read_to_string(p).ok()) else {
-            return Settings::default();
-        };
-        Self::from_json(&text).unwrap_or_default()
+        Self::file_path()
+            .map(|path| Self::load_from_path(&path))
+            .unwrap_or_default()
+    }
+
+    /// Explicit path for isolated native persistence tests. Never changes the
+    /// process-wide USERPROFILE/HOME or the user's actual settings file.
+    pub(crate) fn load_from_path(path: &Path) -> Settings {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|text| Self::from_json(&text))
+            .unwrap_or_default()
     }
 
     fn from_json(text: &str) -> Option<Settings> {
@@ -215,6 +223,11 @@ impl Settings {
 
     pub fn save(&self) -> Result<(), String> {
         let path = Self::file_path().ok_or("cannot resolve app config dir")?;
+        self.save_to_path(&path)
+    }
+
+    /// Writes the same JSON as production, but allows a disposable test path.
+    pub(crate) fn save_to_path(&self, path: &Path) -> Result<(), String> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("cannot create config dir: {e}"))?;
@@ -233,6 +246,65 @@ fn dirs_config() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct IsolatedSettingsPath {
+        dir: PathBuf,
+    }
+
+    impl IsolatedSettingsPath {
+        fn new() -> Self {
+            static NEXT: AtomicUsize = AtomicUsize::new(0);
+            let id = NEXT.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir().join(format!(
+                "ktl-settings-test-{}-{id}",
+                std::process::id()
+            ));
+            std::fs::create_dir(&dir).expect("create a fresh isolated test directory");
+            Self { dir }
+        }
+
+        fn file(&self) -> PathBuf {
+            self.dir.join("settings.json")
+        }
+    }
+
+    impl Drop for IsolatedSettingsPath {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    #[test]
+    fn native_settings_save_and_reload_round_trip_without_user_profile() {
+        let fixture = IsolatedSettingsPath::new();
+        let mut saved = Settings::default();
+        saved.model = ModelId::Glm53Flash;
+        saved.keepalive_min = 210;
+        saved.glm.streams = 2;
+        saved.glm.thinking = "high".into();
+        saved.glm.text_only = true;
+        saved.qwen.mtp = 4;
+        saved.validate().unwrap();
+        saved.save_to_path(&fixture.file()).unwrap();
+
+        let loaded = Settings::load_from_path(&fixture.file());
+        assert_eq!(loaded.model, ModelId::Glm53Flash);
+        assert_eq!(loaded.keepalive_min, 210);
+        assert_eq!(loaded.glm.streams, 2);
+        assert_eq!(loaded.glm.thinking, "high");
+        assert!(loaded.glm.text_only);
+        assert_eq!(loaded.qwen.mtp, 4);
+        loaded.validate().unwrap();
+    }
+
+    #[test]
+    fn native_settings_missing_or_invalid_file_falls_back_to_defaults() {
+        let fixture = IsolatedSettingsPath::new();
+        assert_eq!(Settings::load_from_path(&fixture.file()).keepalive_min, 480);
+        std::fs::write(fixture.file(), b"{invalid json").unwrap();
+        assert_eq!(Settings::load_from_path(&fixture.file()).keepalive_min, 480);
+    }
 
     #[test]
     fn defaults_keep_the_existing_qwen_profile() {
