@@ -103,7 +103,12 @@ native-window screenshot helper could not obtain reliable pixels. The
 computer-use accessibility tree contained panes but not actionable settings
 controls. Hence automated native Save/Cancel persistence and tray behavior
 remain **NOT VERIFIED**, not PASS. There was no Kaggle session state and no
-Start TPU action. The test process was shut down; a residual temporary QA
-cache folder under `%TEMP%` could not be fully deleted because Windows
-reported a nonempty NVIDIA cache subfolder. No user Settings file was
-written in the isolated profile.
+Start TPU action. The test process was shut down; the temporary QA profile
+was fully cleaned on a subsequent verified attempt (after Windows released
+its NVIDIA cache files). No user Settings file was written in the
+isolated profile.
+
+The backend native Settings persistence path is now exercised independently
+with disposable JSON files, validation, rollback on write failure and reload.
+See [native persistence QA](NATIVE_SETTINGS_PERSISTENCE_QA_20261023.md).
+This does **not** change the native visual/interaction verdict.
