@@ -78,16 +78,20 @@ chmod 600 ~/.kaggle/model-proxy.env
 Check the configuration without making a model request:
 
 ~~~powershell
-python tools/kaggle_model_proxy.py doctor
-python tools/kaggle_model_proxy.py models
-python tools/kaggle_model_proxy.py quota
+# Use the SAME venv Python where you installed and authenticated Kaggle CLI.
+$py = Join-Path (Get-Location) ".venv\Scripts\python.exe"
+& $py tools/kaggle_model_proxy.py doctor
+& $py tools/kaggle_model_proxy.py models
+& $py tools/kaggle_model_proxy.py quota
 ~~~
 
 The doctor checks basic credential shape, expected Kaggle HTTPS origin,
 expiration and local model allowlist. It does not contact or authenticate with
 the inference endpoint. The quota command explicitly calls the Kaggle CLI,
 **not** a model; if the CLI's JSON schema changes, run Kaggle's quota command
-directly instead.
+directly instead. The quota subprocess runs `python -m kaggle` using the
+same interpreter as the adapter; the global Windows `PATH` need not contain
+the `kaggle` executable.
 
 ## 2. Start localhost gateway (optional)
 

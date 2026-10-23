@@ -6,6 +6,7 @@ import contextlib
 import io
 import json
 import os
+import sys
 import tempfile
 import threading
 from types import SimpleNamespace
@@ -166,7 +167,8 @@ class ConfigTests(unittest.TestCase):
         self.assertIn("Daily", output.getvalue())
         run.assert_called_once()
         self.assertEqual(run.call_args.args[0],
-                         ["kaggle", "benchmarks", "quota", "--format", "json"])
+                         [sys.executable, "-m", "kaggle",
+                          "benchmarks", "quota", "--format", "json"])
 
     def test_quota_command_rejects_partial_schema(self):
         payload = '[{"period":"Daily","used":"$1"}]'

@@ -373,13 +373,17 @@ def command_line(argv=None) -> int:
 
     if args.command == "quota":
         try:
-            result = subprocess.run(["kaggle", "benchmarks", "quota", "--format", "json"],
+            # Resolve Kaggle from the *same* Python environment as this adapter.
+            # On Windows the CLI can live in .venv even when 'kaggle' is not on PATH.
+            result = subprocess.run([sys.executable, "-m", "kaggle",
+                                     "benchmarks", "quota", "--format", "json"],
                                     capture_output=True, text=True, timeout=30, check=False)
         except (OSError, subprocess.TimeoutExpired):
-            print("Kaggle CLI not available; install it and run kaggle auth login", file=sys.stderr)
+            print("Cannot run Kaggle CLI from the active Python environment", file=sys.stderr)
             return 2
         if result.returncode:
-            print("Kaggle quota unavailable; check CLI authentication", file=sys.stderr)
+            print("Kaggle quota unavailable; check CLI installation and authentication",
+                  file=sys.stderr)
             return 2
         try:
             payload = json.loads(result.stdout)
