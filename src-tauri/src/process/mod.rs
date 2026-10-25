@@ -118,17 +118,11 @@ mod tests {
     #[test]
     fn run_capture_captures_output() {
         #[cfg(windows)]
-        let (prog, args, input): (&str, Vec<String>, Option<&str>) = (
-            "cmd.exe",
-            vec!["/c".into(), "echo hello-ktl".into()],
-            None,
-        );
+        let (prog, args, input): (&str, Vec<String>, Option<&str>) =
+            ("cmd.exe", vec!["/c".into(), "echo hello-ktl".into()], None);
         #[cfg(not(windows))]
-        let (prog, args, input): (&str, Vec<String>, Option<&str>) = (
-            "sh",
-            vec!["-c".into(), "echo hello-ktl".into()],
-            None,
-        );
+        let (prog, args, input): (&str, Vec<String>, Option<&str>) =
+            ("sh", vec!["-c".into(), "echo hello-ktl".into()], None);
         let (code, out) = run_capture(
             Path::new(prog),
             &args,

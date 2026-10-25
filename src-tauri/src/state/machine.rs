@@ -73,10 +73,7 @@ impl TpuPhase {
     /// A failed session must be restartable — `start_state` resets the
     /// terminal flag via `reset_for_kernel` before pushing a new kernel.
     pub fn can_start(self) -> bool {
-        matches!(
-            self,
-            TpuPhase::Idle | TpuPhase::Stopped | TpuPhase::Failed
-        )
+        matches!(self, TpuPhase::Idle | TpuPhase::Stopped | TpuPhase::Failed)
     }
 
     pub fn can_stop(self) -> bool {
@@ -119,11 +116,7 @@ pub enum KaggleStatus {
 
 impl KaggleStatus {
     pub fn parse_kaggle_output(out: &str) -> Option<KaggleStatus> {
-        let idx = out
-            .match_indices("KernelWorkerStatus.")
-            .next()?
-            .0
-            + "KernelWorkerStatus.".len();
+        let idx = out.match_indices("KernelWorkerStatus.").next()?.0 + "KernelWorkerStatus.".len();
         let rest = &out[idx..];
         let word: String = rest
             .chars()
@@ -205,6 +198,7 @@ pub struct MachineState {
 }
 
 impl MachineState {
+    #[cfg(test)]
     pub fn reset_for_kernel(&mut self, kernel: &str, topic: Option<String>) {
         self.reset_for_kernel_model(kernel, topic, ModelId::Qwen38_27b);
     }
@@ -286,7 +280,9 @@ impl MachineState {
                 NoteKind::Warn,
             ),
             "cache-restored" => {
-                let covers = f("covers_this_config").and_then(|v| v.as_bool()).unwrap_or(true);
+                let covers = f("covers_this_config")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
                 self.push_note(
                     ts,
                     if covers {
@@ -350,7 +346,11 @@ impl MachineState {
                         self.probe_fails = 0;
                         self.push_note(
                             ts,
-                            if self.endpoint_live { "Endpoint rotated" } else { "Endpoint reserved" },
+                            if self.endpoint_live {
+                                "Endpoint rotated"
+                            } else {
+                                "Endpoint reserved"
+                            },
                             NoteKind::Info,
                         );
                     }
@@ -447,8 +447,12 @@ impl MachineState {
                 self.error = Some("Server exited unexpectedly".into());
                 self.push_note(ts, "Server exited", NoteKind::Error);
             }
-            "image-test" | "image-test-failed" | "probe-skip-precompile"
-            | "probe-warm-restart" | "build-config-done" | "bundle-built" => {}
+            "image-test"
+            | "image-test-failed"
+            | "probe-skip-precompile"
+            | "probe-warm-restart"
+            | "build-config-done"
+            | "bundle-built" => {}
             other if other.starts_with('p') && other.contains('-') => {}
             _ => {}
         }
@@ -516,15 +520,16 @@ impl MachineState {
                     KaggleStatus::Cancelled => "cancelled".into(),
                     _ => unreachable!(),
                 };
-                let note = if self.ready_at.is_some() || self.phase.rank() >= TpuPhase::Healthy.rank() {
-                    "Session ended"
-                } else {
-                    // Kernel is gone but we never saw it serve. Most common
-                    // cause is a stale state file (auto-shutdown long ago) —
-                    // treat as ended, not as a crash; an explicit ERROR status
-                    // is what produces Failed.
-                    "Session ended (kernel no longer running)"
-                };
+                let note =
+                    if self.ready_at.is_some() || self.phase.rank() >= TpuPhase::Healthy.rank() {
+                        "Session ended"
+                    } else {
+                        // Kernel is gone but we never saw it serve. Most common
+                        // cause is a stale state file (auto-shutdown long ago) —
+                        // treat as ended, not as a crash; an explicit ERROR status
+                        // is what produces Failed.
+                        "Session ended (kernel no longer running)"
+                    };
                 self.phase = TpuPhase::Stopped;
                 self.terminal = Some(terminal);
                 self.push_note(now, note, NoteKind::Info);
@@ -588,9 +593,7 @@ mod tests {
     #[test]
     fn parse_kaggle_output_variants() {
         assert_eq!(
-            KaggleStatus::parse_kaggle_output(
-                "x has status \"KernelWorkerStatus.QUEUED\""
-            ),
+            KaggleStatus::parse_kaggle_output("x has status \"KernelWorkerStatus.QUEUED\""),
             Some(KaggleStatus::Queued)
         );
         assert_eq!(
@@ -601,10 +604,7 @@ mod tests {
             KaggleStatus::parse_kaggle_output("KernelWorkerStatus.CANCELACKNOWLEDGED"),
             Some(KaggleStatus::Cancelled)
         );
-        assert_eq!(
-            KaggleStatus::parse_kaggle_output("no status here"),
-            None
-        );
+        assert_eq!(KaggleStatus::parse_kaggle_output("no status here"), None);
     }
 
     #[test]
@@ -630,7 +630,11 @@ mod tests {
         assert_eq!(m.phase, TpuPhase::Starting);
         m.apply_event(&ev(1_500, "installed", j(serde_json::json!({}))));
         m.apply_event(&ev(1_510, "mtp-patch-applied", j(serde_json::json!({}))));
-        m.apply_event(&ev(1_520, "cache-restored", j(serde_json::json!({"covers_this_config": true}))));
+        m.apply_event(&ev(
+            1_520,
+            "cache-restored",
+            j(serde_json::json!({"covers_this_config": true})),
+        ));
         m.apply_event(&ev(1_530, "weights-mounted", j(serde_json::json!({}))));
         assert_eq!(m.phase, TpuPhase::LoadingWeights);
         m.apply_event(&ev(
@@ -651,7 +655,11 @@ mod tests {
         assert_eq!(m.endpoint, Some("https://a.b.trycloudflare.com/v1".into()));
         assert!(!m.endpoint_live, "reserved endpoint must not be live yet");
 
-        m.apply_event(&ev(2_000, "serving", j(serde_json::json!({"startup_secs": 270}))));
+        m.apply_event(&ev(
+            2_000,
+            "serving",
+            j(serde_json::json!({"startup_secs": 270})),
+        ));
         assert_eq!(m.phase, TpuPhase::Healthy);
 
         m.apply_event(&ev(
@@ -703,11 +711,19 @@ mod tests {
         let mut m = MachineState::default();
         m.reset_for_kernel("u/k", None);
         m.apply_event(&ev(100, "install", j(serde_json::json!({}))));
-        m.apply_event(&ev(200, "failed", j(serde_json::json!({"step": "install"}))));
+        m.apply_event(&ev(
+            200,
+            "failed",
+            j(serde_json::json!({"step": "install"})),
+        ));
         assert_eq!(m.phase, TpuPhase::Failed);
         assert!(m.terminal.is_some());
         // Later events must not move the phase.
-        m.apply_event(&ev(300, "ready", j(serde_json::json!({"endpoint": "https://x.y/v1"}))));
+        m.apply_event(&ev(
+            300,
+            "ready",
+            j(serde_json::json!({"endpoint": "https://x.y/v1"})),
+        ));
         assert_eq!(m.phase, TpuPhase::Failed);
     }
 
@@ -769,7 +785,11 @@ mod tests {
 
         let mut m2 = MachineState::default();
         m2.reset_for_kernel("u/k", None);
-        m2.apply_event(&ev(100, "ready", j(serde_json::json!({"endpoint": "https://x.y/v1"}))));
+        m2.apply_event(&ev(
+            100,
+            "ready",
+            j(serde_json::json!({"endpoint": "https://x.y/v1"})),
+        ));
         m2.apply_event(&ev(200, "stopped", j(serde_json::json!({}))));
         assert_eq!(m2.phase, TpuPhase::Stopped);
     }
@@ -846,7 +866,11 @@ mod tests {
     fn glm_lifecycle_maps_into_existing_phases() {
         let mut m = MachineState::default();
         m.reset_for_kernel_model("u/glm", None, ModelId::Glm53Flash);
-        m.apply_event(&ev(100, "loading", j(serde_json::json!({"note": "weights"}))));
+        m.apply_event(&ev(
+            100,
+            "loading",
+            j(serde_json::json!({"note": "weights"})),
+        ));
         assert_eq!(m.phase, TpuPhase::LoadingWeights);
         m.apply_event(&ev(200, "loaded", j(serde_json::json!({"hbm_gb": 15.4}))));
         assert_eq!(m.phase, TpuPhase::Compiling);
@@ -878,7 +902,11 @@ mod tests {
         // ready already sets serving_from (not estimated). Drop it to test heartbeat path:
         m3.serving_from = None;
         m3.keepalive_min = Some(480);
-        m3.apply_event(&ev(2_000, "heartbeat", j(serde_json::json!({"up_min": 10}))));
+        m3.apply_event(&ev(
+            2_000,
+            "heartbeat",
+            j(serde_json::json!({"up_min": 10})),
+        ));
         assert_eq!(m3.serving_from, Some(1_400));
         assert!(m3.serving_from_estimated);
         assert!(m3.remaining_is_estimated());
@@ -900,7 +928,11 @@ mod tests {
 
         // A floored heartbeat arrives later: the exact anchor must survive
         // and the remaining counter must stay exact (no "~" in the UI).
-        m.apply_event(&ev(2_000, "heartbeat", j(serde_json::json!({"up_min": 16}))));
+        m.apply_event(&ev(
+            2_000,
+            "heartbeat",
+            j(serde_json::json!({"up_min": 16})),
+        ));
         assert_eq!(m.serving_from, Some(1_000));
         assert!(!m.serving_from_estimated);
         assert!(!m.remaining_is_estimated());
@@ -919,7 +951,11 @@ mod tests {
         // Probe-recovery style anchor: present but flagged estimated.
         m.serving_from = Some(950);
         m.serving_from_estimated = true;
-        m.apply_event(&ev(2_000, "heartbeat", j(serde_json::json!({"up_min": 10}))));
+        m.apply_event(&ev(
+            2_000,
+            "heartbeat",
+            j(serde_json::json!({"up_min": 10})),
+        ));
         assert_eq!(m.serving_from, Some(1_400));
         assert!(m.serving_from_estimated);
     }
@@ -931,6 +967,10 @@ mod tests {
         m.apply_event(&ev(100, "server-launch", j(serde_json::json!({}))));
         assert_eq!(m.phase, TpuPhase::Compiling);
         m.apply_event(&ev(200, "weights-mounted", j(serde_json::json!({}))));
-        assert_eq!(m.phase, TpuPhase::Compiling, "weights after server-launch must not regress");
+        assert_eq!(
+            m.phase,
+            TpuPhase::Compiling,
+            "weights after server-launch must not regress"
+        );
     }
 }

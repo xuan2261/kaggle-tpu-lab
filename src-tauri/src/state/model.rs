@@ -1,18 +1,13 @@
 use serde::{Deserialize, Serialize};
 
 // Shared model identifiers for saved settings and live session state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ModelId {
     #[serde(rename = "qwen38-27b")]
+    #[default]
     Qwen38_27b,
     #[serde(rename = "glm53-flash")]
     Glm53Flash,
-}
-
-impl Default for ModelId {
-    fn default() -> Self {
-        Self::Qwen38_27b
-    }
 }
 
 impl ModelId {

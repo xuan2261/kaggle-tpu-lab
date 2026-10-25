@@ -82,7 +82,9 @@ impl Settings {
 
     pub fn validate(&self) -> Result<(), String> {
         if !(30..=540).contains(&self.keepalive_min) {
-            return Err("Keepalive must be between 30 and 540 min (Kaggle caps TPU sessions at 9 h)".into());
+            return Err(
+                "Keepalive must be between 30 and 540 min (Kaggle caps TPU sessions at 9 h)".into(),
+            );
         }
 
         match self.model {
@@ -200,7 +202,8 @@ impl Settings {
 
     fn from_json(text: &str) -> Option<Settings> {
         let value: Value = serde_json::from_str(text).ok()?;
-        if value.get("qwen").is_some() || value.get("glm").is_some() || value.get("model").is_some() {
+        if value.get("qwen").is_some() || value.get("glm").is_some() || value.get("model").is_some()
+        {
             let mut parsed: Settings = serde_json::from_value(value).ok()?;
             // The old companion permitted 4-8 GLM streams; at 262k the
             // current upstream engine has room for only three.
@@ -213,13 +216,35 @@ impl Settings {
         // v0.3.2 and earlier stored one Qwen-only profile at the root. Preserve
         // every old field when upgrading to the dual-model schema.
         let mut out = Settings::default();
-        out.project_root = value.get("projectRoot").and_then(Value::as_str).map(str::to_string);
-        out.keepalive_min = value.get("keepaliveMin").and_then(Value::as_i64).unwrap_or(out.keepalive_min);
-        out.qwen.context = value.get("context").and_then(Value::as_i64).unwrap_or(out.qwen.context);
-        out.qwen.mtp = value.get("mtp").and_then(Value::as_i64).unwrap_or(out.qwen.mtp);
-        out.qwen.thinking = value.get("thinking").and_then(Value::as_str).unwrap_or(&out.qwen.thinking).to_string();
-        out.qwen.fast_start = value.get("fastStart").and_then(Value::as_bool).unwrap_or(out.qwen.fast_start);
-        out.qwen.text_only = value.get("textOnly").and_then(Value::as_bool).unwrap_or(out.qwen.text_only);
+        out.project_root = value
+            .get("projectRoot")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        out.keepalive_min = value
+            .get("keepaliveMin")
+            .and_then(Value::as_i64)
+            .unwrap_or(out.keepalive_min);
+        out.qwen.context = value
+            .get("context")
+            .and_then(Value::as_i64)
+            .unwrap_or(out.qwen.context);
+        out.qwen.mtp = value
+            .get("mtp")
+            .and_then(Value::as_i64)
+            .unwrap_or(out.qwen.mtp);
+        out.qwen.thinking = value
+            .get("thinking")
+            .and_then(Value::as_str)
+            .unwrap_or(&out.qwen.thinking)
+            .to_string();
+        out.qwen.fast_start = value
+            .get("fastStart")
+            .and_then(Value::as_bool)
+            .unwrap_or(out.qwen.fast_start);
+        out.qwen.text_only = value
+            .get("textOnly")
+            .and_then(Value::as_bool)
+            .unwrap_or(out.qwen.text_only);
         Some(out)
     }
 
@@ -397,37 +422,44 @@ fn replace_staged_settings(temporary: &Path, target: &Path) -> io::Result<()> {
                 ));
             }
             let _ = std::fs::remove_file(temporary);
-            return Err(failure);
+            Err(failure)
         }
         Ok(_) => {
             // In particular, do not follow or replace a symlink/reparse target.
             let _ = std::fs::remove_file(temporary);
-            return Err(io::Error::new(
+            Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "settings destination must be a regular file",
-            ));
+            ))
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             // No REPLACE_EXISTING flag: a competing first writer must not be
             // overwritten, even if it appears after symlink_metadata.
-            return match move_without_overwrite_windows(temporary, target) {
+            match move_without_overwrite_windows(temporary, target) {
                 Ok(()) => Ok(()),
                 Err(error) => {
                     let _ = std::fs::remove_file(temporary);
                     Err(error)
                 }
-            };
+            }
         }
         Err(error) => {
             let _ = std::fs::remove_file(temporary);
-            return Err(error);
+            Err(error)
         }
     }
 }
 
 fn dirs_config() -> Option<PathBuf> {
-    let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).ok()?;
-    Some(PathBuf::from(home).join("AppData").join("Roaming").join("com.lucas.kaggle-tpu-companion"))
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .ok()?;
+    Some(
+        PathBuf::from(home)
+            .join("AppData")
+            .join("Roaming")
+            .join("com.lucas.kaggle-tpu-companion"),
+    )
 }
 
 #[cfg(test)]
@@ -443,10 +475,8 @@ mod tests {
         fn new() -> Self {
             static NEXT: AtomicUsize = AtomicUsize::new(0);
             let id = NEXT.fetch_add(1, Ordering::Relaxed);
-            let dir = std::env::temp_dir().join(format!(
-                "ktl-settings-test-{}-{id}",
-                std::process::id()
-            ));
+            let dir =
+                std::env::temp_dir().join(format!("ktl-settings-test-{}-{id}", std::process::id()));
             std::fs::create_dir(&dir).expect("create a fresh isolated test directory");
             Self { dir }
         }
@@ -465,13 +495,21 @@ mod tests {
     #[test]
     fn native_settings_save_and_reload_round_trip_without_user_profile() {
         let fixture = IsolatedSettingsPath::new();
-        let mut saved = Settings::default();
-        saved.model = ModelId::Glm53Flash;
-        saved.keepalive_min = 210;
-        saved.glm.streams = 2;
-        saved.glm.thinking = "high".into();
-        saved.glm.text_only = true;
-        saved.qwen.mtp = 4;
+        let saved = Settings {
+            model: ModelId::Glm53Flash,
+            keepalive_min: 210,
+            glm: GlmSettings {
+                streams: 2,
+                thinking: "high".into(),
+                text_only: true,
+                ..Default::default()
+            },
+            qwen: QwenSettings {
+                mtp: 4,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         saved.validate().unwrap();
         saved.save_to_path(&fixture.file()).unwrap();
 
@@ -575,8 +613,10 @@ mod tests {
         };
         assert!(!acl().contains("(I)"), "fixture must have an explicit ACL");
 
-        let mut changed = Settings::default();
-        changed.keepalive_min = 210;
+        let changed = Settings {
+            keepalive_min: 210,
+            ..Default::default()
+        };
         changed.save_to_path(&fixture.file()).unwrap();
 
         assert_eq!(Settings::load_from_path(&fixture.file()).keepalive_min, 210);
@@ -631,8 +671,10 @@ mod tests {
 
     #[test]
     fn glm_args_use_glm_profile_only() {
-        let mut s = Settings::default();
-        s.model = ModelId::Glm53Flash;
+        let s = Settings {
+            model: ModelId::Glm53Flash,
+            ..Default::default()
+        };
         let joined = s.serve_args().join(" ");
         assert!(joined.contains("--model glm53-flash"));
         assert!(joined.contains("--max-len 262144"));
@@ -667,9 +709,14 @@ mod tests {
 
     #[test]
     fn glm_streams_above_three_are_rejected() {
-        let mut s = Settings::default();
-        s.model = ModelId::Glm53Flash;
-        s.glm.streams = 4;
+        let mut s = Settings {
+            model: ModelId::Glm53Flash,
+            glm: GlmSettings {
+                streams: 4,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         assert!(s.validate().is_err());
         s.glm.streams = 3;
         s.validate().unwrap();
@@ -681,9 +728,14 @@ mod tests {
         q.qwen.mtp = 99;
         assert!(q.validate().is_err());
 
-        let mut g = Settings::default();
-        g.model = ModelId::Glm53Flash;
-        g.glm.thinking = "medium".into();
+        let mut g = Settings {
+            model: ModelId::Glm53Flash,
+            glm: GlmSettings {
+                thinking: "medium".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         assert!(g.validate().is_err());
         g.glm.thinking = "high".into();
         g.glm.streams = 0;

@@ -19,7 +19,6 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::state::machine::{KaggleStatus, MachineState, NoteKind, TpuPhase};
 use crate::state::{now_secs, AppState, SessionSnapshot};
 use launcher::LocalState;
-use probe::EndpointProbe;
 
 pub use ntfy::{EventSource, NtfySource};
 pub use probe::HttpProbe;
@@ -41,6 +40,7 @@ impl KaggleApi for CliKaggleApi {
 #[cfg(test)]
 pub mod testutil {
     use super::*;
+    use crate::kaggle::probe::EndpointProbe;
 
     #[derive(Clone)]
     pub struct FakeKaggleApi {
@@ -49,19 +49,24 @@ pub mod testutil {
 
     impl FakeKaggleApi {
         pub fn queued() -> Self {
-            Self { status: KaggleStatus::Queued }
+            Self {
+                status: KaggleStatus::Queued,
+            }
         }
         pub fn running() -> Self {
-            Self { status: KaggleStatus::Running }
-        }
-        pub fn complete() -> Self {
-            Self { status: KaggleStatus::Complete }
+            Self {
+                status: KaggleStatus::Running,
+            }
         }
         pub fn not_found() -> Self {
-            Self { status: KaggleStatus::NotFound }
+            Self {
+                status: KaggleStatus::NotFound,
+            }
         }
         pub fn unavailable() -> Self {
-            Self { status: KaggleStatus::Unavailable }
+            Self {
+                status: KaggleStatus::Unavailable,
+            }
         }
     }
 
@@ -94,7 +99,11 @@ pub mod testutil {
     }
 
     impl EventSource for FakeEvents {
-        fn fetch(&self, _topic: &str, _since: i64) -> Result<Vec<crate::state::machine::LauncherEvent>, String> {
+        fn fetch(
+            &self,
+            _topic: &str,
+            _since: i64,
+        ) -> Result<Vec<crate::state::machine::LauncherEvent>, String> {
             if self.fail.load(std::sync::atomic::Ordering::SeqCst) {
                 Err("fake ntfy unreachable".into())
             } else {
@@ -130,7 +139,9 @@ pub fn tick_state(st: &AppState) -> SessionSnapshot {
     let local = LocalState::read(&st.state_file);
     {
         let mut key = st.api_key.lock().unwrap();
-        *key = local.as_ref().and_then(|_| LocalState::raw_api_key(&st.state_file));
+        *key = local
+            .as_ref()
+            .and_then(|_| LocalState::raw_api_key(&st.state_file));
     }
     {
         let mut m = st.machine.lock().unwrap();
@@ -203,8 +214,7 @@ pub fn tick_state(st: &AppState) -> SessionSnapshot {
                     && m.ntfy_reachable
                     && m.last_event_ts == 0
                     && m.endpoint.is_none()
-                    && l
-                        .age_secs(&st.state_file, now)
+                    && l.age_secs(&st.state_file, now)
                         .map(|age| age >= STALE_UNVERIFIED_STATE_SECS)
                         .unwrap_or(false)
             }
@@ -255,7 +265,8 @@ pub fn tick_state(st: &AppState) -> SessionSnapshot {
                 kstatus,
                 KaggleStatus::Running | KaggleStatus::Unknown | KaggleStatus::Unavailable
             ) {
-                let due = now - st.last_probe_at.load(Ordering::Relaxed) >= PROBE_WHILE_UNKNOWN_EVERY;
+                let due =
+                    now - st.last_probe_at.load(Ordering::Relaxed) >= PROBE_WHILE_UNKNOWN_EVERY;
                 (due, 2)
             } else {
                 (false, 0)
@@ -350,11 +361,7 @@ fn do_start_state(st: &AppState) -> Result<SessionSnapshot, String> {
                 let mut m = st.machine.lock().unwrap();
                 if m.kernel.as_deref() != Some(l.kernel.as_str()) {
                     m.reset_for_kernel_model(&l.kernel, Some(l.topic.clone()), l.model);
-                    m.push_note(
-                        now,
-                        "Reattached to existing session",
-                        NoteKind::Info,
-                    );
+                    m.push_note(now, "Reattached to existing session", NoteKind::Info);
                 }
             }
             {
@@ -514,15 +521,25 @@ pub fn tick(app: &AppHandle) -> SessionSnapshot {
             .and_then(|w| match (w.inner_size(), w.scale_factor()) {
                 (Ok(sz), Ok(sf)) if sf > 0.0 => Some(format!(
                     "viewport(physical)={:?}x{:?} scale={:.2} css={:.0}x{:.0}",
-                    sz.width, sz.height, sf, sz.width as f64 / sf, sz.height as f64 / sf
+                    sz.width,
+                    sz.height,
+                    sf,
+                    sz.width as f64 / sf,
+                    sz.height as f64 / sf
                 )),
                 _ => None,
             })
             .unwrap_or_else(|| "viewport=?".to_string());
         eprintln!(
             "[tick] {} phase={:?} kernel={:?} endpoint={:?} live={} uptime={:?} ntfy={} err={:?}",
-            viewport, snap.phase, snap.kernel, snap.endpoint, snap.endpoint_live,
-            snap.uptime_secs, snap.ntfy_reachable, snap.error
+            viewport,
+            snap.phase,
+            snap.kernel,
+            snap.endpoint,
+            snap.endpoint_live,
+            snap.uptime_secs,
+            snap.ntfy_reachable,
+            snap.error
         );
     }
     snap
@@ -682,10 +699,18 @@ mod tests {
             FakeKaggleApi::running(),
             FakeEvents::new(
                 vec![
-                    ev(1_000, "server-launch", serde_json::json!({"max_model_len": 262144, "mtp": 3, "text_only": true})),
+                    ev(
+                        1_000,
+                        "server-launch",
+                        serde_json::json!({"max_model_len": 262144, "mtp": 3, "text_only": true}),
+                    ),
                     tunnel_ev(1_100),
                     ready_ev(2_000),
-                    ev(2_500, "benchmark", serde_json::json!({"decode_tok_s": 106.8})),
+                    ev(
+                        2_500,
+                        "benchmark",
+                        serde_json::json!({"decode_tok_s": 106.8}),
+                    ),
                 ],
                 false,
             ),
@@ -695,7 +720,10 @@ mod tests {
         let snap = tick_state(&st);
         assert_eq!(snap.phase, TpuPhase::Ready);
         assert!(snap.endpoint_live);
-        assert_eq!(snap.endpoint.as_deref(), Some("https://apollo.trycloudflare.com/v1"));
+        assert_eq!(
+            snap.endpoint.as_deref(),
+            Some("https://apollo.trycloudflare.com/v1")
+        );
         assert!(snap.has_api_key);
         assert_eq!(snap.decode_tok_s, Some(106.8));
         let json = serde_json::to_string(&snap).unwrap();
@@ -758,7 +786,10 @@ mod tests {
         // stays active (Provisioning), never Failed.
         let snap = tick_state(&st);
         assert_ne!(snap.phase, TpuPhase::Failed);
-        assert!(matches!(snap.phase, TpuPhase::Provisioning | TpuPhase::Queued));
+        assert!(matches!(
+            snap.phase,
+            TpuPhase::Provisioning | TpuPhase::Queued
+        ));
     }
 
     #[test]
@@ -951,12 +982,18 @@ mod tests {
         assert_eq!(snap.kernel, None);
         assert!(!snap.has_api_key);
         assert!(snap.phase.can_start());
-        assert!(!st.state_file.exists(), "successful stop must clear launcher state");
+        assert!(
+            !st.state_file.exists(),
+            "successful stop must clear launcher state"
+        );
         assert!(marker.exists(), "launch.py stop was not invoked");
 
         st.settings.lock().unwrap().model = crate::state::model::ModelId::Glm53Flash;
         let after_model_switch = st.snapshot(now_secs());
-        assert_eq!(after_model_switch.model, Some(crate::state::model::ModelId::Glm53Flash));
+        assert_eq!(
+            after_model_switch.model,
+            Some(crate::state::model::ModelId::Glm53Flash)
+        );
         assert!(after_model_switch.phase.can_start());
         assert_eq!(after_model_switch.kernel, None);
     }
@@ -1009,7 +1046,10 @@ mod tests {
 
         let err = stop_state(&st).expect_err("failed launcher stop must surface");
         assert!(err.contains("stop exited"));
-        assert!(state_file.exists(), "failed stop must preserve launcher state");
+        assert!(
+            state_file.exists(),
+            "failed stop must preserve launcher state"
+        );
         let after = st.snapshot(now_secs());
         assert_eq!(after.phase, TpuPhase::Ready);
         assert_eq!(after.kernel.as_deref(), Some("u/k"));
