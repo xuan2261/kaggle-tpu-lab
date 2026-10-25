@@ -38,7 +38,8 @@ python tools/smoke_endpoint.py --base-url https://your-own-tunnel.trycloudflare.
 
 The program prompts for the API key with hidden input, unless OPENAI_API_KEY is already
 set locally. To test GLM, provide its own tunnel URL and choose glm-5.3-flash.
-Never paste API keys, local session files or unredacted notebook output in GitHub issues.
+Never paste API keys, local session files or unredacted notebook output in
+public PRs, issue trackers, build logs or chats.
 
 Checks: authenticated models list, OpenAI chat completions, OpenAI SSE streaming,
 Anthropic messages and acceptance of a tool-enabled request. A successful tool
@@ -54,6 +55,8 @@ tested through an appropriately supported, authorized transport.
 
 Record separately for Qwen and GLM: pinned commit, TPU device count, dataset
 revisions, startup, actual streaming behavior, tool-call selection, and Companion
-start/stop/reconnect. Keep the PR in draft on any failed live verification.
+start/stop/reconnect. If live verification is resumed and fails, keep that
+**release qualification unpassed** and record the failure in the acceptance
+checklist; source-code PR status and production-release approval are separate.
 Merged source code is not a production release; track any remaining live
 verification failure in a separate review or release checklist.

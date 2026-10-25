@@ -8,7 +8,7 @@ is required. `PREVIEW` is an essential part of the expected UI state.
 
 ## Windows PowerShell
 
-Run the following from `C:\Work\kaggle-tpu-lab`:
+Run the following from **your own repository checkout root**:
 
 ~~~powershell
 npm ci
@@ -52,13 +52,16 @@ synthetic session snapshots outside the Tauri desktop runtime.
 
 ## CI and limitations
 
-The `companion-browser-e2e.yml` workflow runs this script in Chrome on
-GitHub Actions, builds the frontend from the PR revision and has read-only
+The [browser E2E workflow](../.github/workflows/companion-browser-e2e.yml)
+runs this script in Chrome on GitHub Actions for relevant PRs and changes
+on `main`. It builds the frontend from the triggering revision and has read-only
 repository permissions. It uses **no Kaggle credentials** or model API calls.
 
-Actual Windows Tauri UI, native tray behavior, local credential integration,
-real Kaggle start/stop, Anthropic/OpenAI streaming and TPU/GCP allocation
-remain independent release gates.
+This browser suite is not an installed Windows Tauri/tray test or a live
+TPU/network test. See the [actual installed Companion 0.4.6 QA](WINDOWS_COMPANION_0_4_6_QA_20261025.md)
+for its narrow native idle Save/Cancel/tray acceptance; the
+[live TPU TODO](LIVE_SMOKE_TEST.md#todo-deferred-tpu-acceptance-not-a-test-pass)
+still owns unverified session lifecycle, SSE/tool calling and transport.
 
 User-supplied screenshots of the **native** Windows Companion have since been
 reviewed separately. See [native visual QA](NATIVE_GUI_VISUAL_QA_20261023.md)
