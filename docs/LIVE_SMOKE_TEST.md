@@ -1,5 +1,32 @@
 # Live Kaggle TPU smoke test
 
+## TODO: deferred TPU acceptance (not a test PASS)
+
+The project owner deferred **all live Kaggle TPU testing** for the current
+non-TPU engineering pass. Do not launch a TPU kernel, submit a notebook to
+obtain a TPU, or consume TPU time merely to clear this checklist. This is a
+deferred release qualification, **not** evidence that Qwen/GLM work on TPU.
+
+- [ ] Complete Kaggle's official account/Persona verification when the owner
+      chooses to resume TPU testing; confirm that the notebook UI actually
+      allows TPU v5e-8, not just that hourly quota is available.
+- [ ] Qwen3.8-27B: confirm required datasets and real 8-device TPU allocation;
+      reach engine READY, then run bounded authenticated chat and verify the
+      supported streaming/tool behavior through the **actual** network path.
+- [ ] GLM-5.3-Flash: separately confirm permitted weights/datasets and an
+      actual TPU allocation; reach READY and validate a bounded request and
+      supported protocol behavior.
+- [ ] Exercise the installed Windows Companion's start/status/reconnect/stop
+      workflow only with a test-owned kernel, verify its cleanup, and record
+      TPU-hour usage before/after. Never stop unrelated existing kernels.
+- [ ] Attach redacted, source-pinned evidence before considering these items
+      passed. Hosted Kaggle **Benchmarks Model Proxy** SSE/tool-call results
+      are separate and cannot satisfy either self-hosted TPU item.
+
+No GCP deployment, CLI submission to evade the identity check, or unsigned
+production release is authorized by this TODO. Other non-TPU development and
+testing may proceed independently.
+
 This tool never starts or stops a TPU; it sends a few inference requests only to an
 already-running endpoint belonging to you. Running it consumes some inference quota.
 
