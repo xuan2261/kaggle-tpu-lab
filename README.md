@@ -100,7 +100,7 @@ npm ci
 npm run tauri:dev
 ```
 
-The application expects the repository checkout (including `launch.py`) and its `.venv` to remain available. An unsigned Windows NSIS/MSI **QA installer** can be found in artifacts of successful [Integration checks runs](https://github.com/xuan2261/kaggle-tpu-lab/actions/workflows/integration.yml); it is not a standalone deployment package or a signed public release.
+The application expects the repository checkout (including `launch.py`) and its `.venv` to remain available. An unsigned Windows NSIS/MSI **QA installer** is attached only when the conditional `windows-installers` job runs in [Integration checks](https://github.com/xuan2261/kaggle-tpu-lab/actions/workflows/integration.yml); the job is normally skipped on `fix/*` PRs. It is not a standalone deployment package or signed public release.
 
 Want to inspect the UI without consuming Kaggle quota?
 
@@ -127,9 +127,9 @@ The smoke tool checks authenticated model discovery, chat completions, OpenAI-st
 
 ## Testing and release status
 
-[Integration checks](https://github.com/xuan2261/kaggle-tpu-lab/actions/workflows/integration.yml) include Python contract tests, a mock HTTP API test, the frontend production build, Rust unit tests on Windows, selected GLM JAX CPU tests and QA-only Windows installer packaging. These are **automated checks**, not live TPU benchmarks or actual desktop interaction tests.
+[Integration checks](https://github.com/xuan2261/kaggle-tpu-lab/actions/workflows/integration.yml) include Python contract tests, a mock HTTP API test, the frontend production build, Rust unit tests on Windows and selected GLM JAX CPU tests. QA-only Windows installer packaging runs **conditionally** (check the `windows-installers` job status). These automated checks are not live TPU benchmarks or actual desktop interaction tests.
 
-The following remain **release blockers**: full Kaggle TPU start/stop and reconnect verification for both models, real endpoint/tool/stream testing, review of secret handling and licensing, plus installation and visual QA on a Windows machine. See the merged [integration PR](https://github.com/xuan2261/kaggle-tpu-lab/pull/2) for historical evidence; verify fresh CI and live results before releasing.
+Live Qwen/GLM TPU start/stop, reconnect, endpoint, streaming and tool behavior remain **unverified release qualifications**; the owner has explicitly deferred them to the [TPU acceptance TODO](docs/LIVE_SMOKE_TEST.md#todo-deferred-tpu-acceptance-not-a-test-pass) while independent non-TPU work continues. Hosted Kaggle Benchmarks Model Proxy protocol checks do not replace those engine tests. Native Windows installation and Settings/tray have separate QA and owner acceptance evidence, not a substitute for live TPU verification. Review secret handling, external model licensing, current CI and remaining Windows compatibility before any production release.
 
 The [source-sync workflow](.github/workflows/source-sync.yml) is present on `main` and is designed to propose **draft PRs** from both sources. It does not automatically merge, force-push, run Kaggle jobs or provision billable resources; operating it may require GitHub Actions permissions.
 
@@ -139,6 +139,7 @@ The [source-sync workflow](.github/workflows/source-sync.yml) is present on `mai
 - [GLM engine, benchmark methodology, dependencies and known limitations](glm53-flash/README.md)
 - [Integration provenance, compatibility and safety requirements](docs/INTEGRATION.md)
 - [API smoke-test procedure](docs/LIVE_SMOKE_TEST.md)
+- [Non-TPU Windows QA and deferred TPU acceptance](docs/NON_TPU_QA_20261025.md)
 - [Kaggle Benchmarks Model Proxy local-only adapter](docs/KAGGLE_MODEL_PROXY.md)
 - [Google Cloud TPU VM setup (paid)](gcp/README.md)
 - [Contributor guidance](CONTRIBUTING.md)
