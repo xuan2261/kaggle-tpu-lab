@@ -2,7 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::state::model::ModelId;
 
@@ -227,6 +229,8 @@ impl Settings {
     }
 
     /// Writes the same JSON as production, but allows a disposable test path.
+    /// Stage beside the destination so an interrupted write cannot truncate the
+    /// last good settings file. Rename is not a full power-loss durability guarantee.
     pub(crate) fn save_to_path(&self, path: &Path) -> Result<(), String> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
@@ -234,7 +238,39 @@ impl Settings {
         }
         let txt = serde_json::to_string_pretty(self)
             .map_err(|e| format!("cannot serialize settings: {e}"))?;
-        std::fs::write(&path, txt).map_err(|e| format!("cannot write settings: {e}"))
+        let parent = path.parent().ok_or("cannot resolve config parent")?;
+        let file_name = path.file_name().ok_or("cannot resolve config filename")?;
+
+        // Exclusive creation prevents collisions with concurrent or interrupted
+        // saves. Do not reuse or overwrite a stale temporary file after a crash.
+        static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
+        let (mut file, temporary) = (0..32)
+            .find_map(|_| {
+                let serial = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+                let candidate = parent.join(format!(
+                    ".{}.{}.{serial}.tmp",
+                    file_name.to_string_lossy(),
+                    std::process::id()
+                ));
+                match std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&candidate)
+                {
+                    Ok(file) => Some(Ok((file, candidate))),
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => None,
+                    Err(e) => Some(Err(format!("cannot stage settings: {e}"))),
+                }
+            })
+            .ok_or_else(|| "cannot allocate a unique settings temporary file".to_string())??;
+
+        let staged = file.write_all(txt.as_bytes()).and_then(|_| file.sync_all());
+        drop(file); // Windows must release the writer before a rename/removal.
+        let result = staged.and_then(|_| std::fs::rename(&temporary, path));
+        if result.is_err() {
+            let _ = std::fs::remove_file(&temporary);
+        }
+        result.map_err(|e| format!("cannot persist settings: {e}"))
     }
 }
 
@@ -304,6 +340,60 @@ mod tests {
         assert_eq!(Settings::load_from_path(&fixture.file()).keepalive_min, 480);
         std::fs::write(fixture.file(), b"{invalid json").unwrap();
         assert_eq!(Settings::load_from_path(&fixture.file()).keepalive_min, 480);
+    }
+
+    #[test]
+    fn native_settings_replacement_preserves_complete_json_and_cleans_staging() {
+        let fixture = IsolatedSettingsPath::new();
+        let previous = Settings::default();
+        previous.save_to_path(&fixture.file()).unwrap();
+
+        let mut changed = previous.clone();
+        changed.keepalive_min = 210;
+        changed.model = ModelId::Glm53Flash;
+        changed.glm.streams = 2;
+        changed.save_to_path(&fixture.file()).unwrap();
+
+        let raw = std::fs::read_to_string(fixture.file()).unwrap();
+        let decoded: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(decoded["keepaliveMin"], 210);
+        assert_eq!(Settings::load_from_path(&fixture.file()).glm.streams, 2);
+        assert_eq!(std::fs::read_dir(&fixture.dir).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn native_settings_failed_rename_cleans_staging_and_keeps_destination() {
+        let fixture = IsolatedSettingsPath::new();
+        // A directory cannot be replaced with a regular JSON file.
+        std::fs::create_dir(fixture.file()).unwrap();
+        assert!(Settings::default().save_to_path(&fixture.file()).is_err());
+        assert!(fixture.file().is_dir());
+        assert_eq!(std::fs::read_dir(&fixture.dir).unwrap().count(), 1);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn native_settings_locked_destination_keeps_previous_json() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let fixture = IsolatedSettingsPath::new();
+        let previous = Settings::default();
+        previous.save_to_path(&fixture.file()).unwrap();
+        let original = std::fs::read(fixture.file()).unwrap();
+
+        // FILE_SHARE_READ only: a second writer cannot acquire delete sharing
+        // to replace this open destination on Windows.
+        let lock = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0x00000001)
+            .open(fixture.file())
+            .unwrap();
+        let mut changed = previous;
+        changed.keepalive_min = 210;
+        assert!(changed.save_to_path(&fixture.file()).is_err());
+        drop(lock);
+        assert_eq!(std::fs::read(fixture.file()).unwrap(), original);
+        assert_eq!(std::fs::read_dir(&fixture.dir).unwrap().count(), 1);
     }
 
     #[test]
