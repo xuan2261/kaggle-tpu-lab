@@ -72,9 +72,10 @@ reported passing check.
 - These tests cover **native Rust persistence**, not real WebView2 dialog
   interactions. Cancel/Save, focus, tray behavior and DPI still require
   native end-to-end acceptance on Windows.
-- The current file-save implementation is not an atomic/recoverable write.
-  Sudden power loss or partial writes remain a crash-consistency risk for
-  a future production-hardening iteration.
+- At the **2026-10-23 baseline**, file saving was not a replace-style write.
+  Later work on the PR added staging/replacement; see
+  [the subsequent QA record](NON_TPU_QA_20261025.md). Full power-loss
+  durability remains a separate qualification.
 - MSI/NSIS installation, Kaggle TPU jobs and real hosted SSE/tool calling
   remain separate release gates.
 
