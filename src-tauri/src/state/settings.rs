@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -266,11 +266,162 @@ impl Settings {
 
         let staged = file.write_all(txt.as_bytes()).and_then(|_| file.sync_all());
         drop(file); // Windows must release the writer before a rename/removal.
-        let result = staged.and_then(|_| std::fs::rename(&temporary, path));
-        if result.is_err() {
-            let _ = std::fs::remove_file(&temporary);
-        }
+        let result = match staged {
+            Ok(()) => replace_staged_settings(&temporary, path),
+            Err(error) => {
+                let _ = std::fs::remove_file(&temporary);
+                Err(error)
+            }
+        };
         result.map_err(|e| format!("cannot persist settings: {e}"))
+    }
+}
+
+/// An existing Windows settings file can have a DACL more restrictive than its
+/// parent directory. `std::fs::rename` replaces it with the staged file's
+/// inherited DACL, so it is only sufficient on non-Windows platforms.
+#[cfg(not(windows))]
+fn replace_staged_settings(temporary: &Path, target: &Path) -> io::Result<()> {
+    let result = std::fs::rename(temporary, target);
+    if result.is_err() {
+        let _ = std::fs::remove_file(temporary);
+    }
+    result
+}
+
+#[cfg(windows)]
+fn move_without_overwrite_windows(from: &Path, to: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+
+    #[link(name = "Kernel32")]
+    unsafe extern "system" {
+        fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
+    }
+
+    let from_name: Vec<u16> = from.as_os_str().encode_wide().chain(Some(0)).collect();
+    let to_name: Vec<u16> = to.as_os_str().encode_wide().chain(Some(0)).collect();
+    // Never replace an existing target, including one a concurrent writer made.
+    const MOVEFILE_WRITE_THROUGH: u32 = 0x0000_0008;
+    // SAFETY: both strings are live and NUL-terminated for this synchronous call.
+    let success =
+        unsafe { MoveFileExW(from_name.as_ptr(), to_name.as_ptr(), MOVEFILE_WRITE_THROUGH) };
+    if success != 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+#[cfg(windows)]
+fn replace_staged_settings(temporary: &Path, target: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+
+    #[link(name = "Kernel32")]
+    unsafe extern "system" {
+        fn ReplaceFileW(
+            replaced: *const u16,
+            replacement: *const u16,
+            backup: *const u16,
+            flags: u32,
+            exclude: *const std::ffi::c_void,
+            reserved: *const std::ffi::c_void,
+        ) -> i32;
+    }
+
+    let new_name: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
+    let old_name: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
+
+    let backup = temporary.with_extension("previous");
+    let backup_name: Vec<u16> = backup.as_os_str().encode_wide().chain(Some(0)).collect();
+    // ReplaceFileW expects a fresh name for its backup of the original file.
+    // Never overwrite a leftover recovery file from an earlier failed save.
+    match std::fs::symlink_metadata(&backup) {
+        Ok(_) => {
+            let _ = std::fs::remove_file(temporary);
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "settings backup name in use",
+            ));
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => {
+            let _ = std::fs::remove_file(temporary);
+            return Err(error);
+        }
+    }
+
+    match std::fs::symlink_metadata(target) {
+        Ok(meta) if meta.file_type().is_file() => {
+            // Flags=0 is important: never ignore ACL/attribute merge failures.
+            // ReplaceFileW preserves the destination's DACL and metadata. A
+            // same-directory backup protects the original in partial failures.
+            // SAFETY: UTF-16 paths remain alive and NUL-terminated; other
+            // optional/reserved parameters are null.
+            let result = unsafe {
+                ReplaceFileW(
+                    old_name.as_ptr(),
+                    new_name.as_ptr(),
+                    backup_name.as_ptr(),
+                    0,
+                    std::ptr::null(),
+                    std::ptr::null(),
+                )
+            };
+            if result != 0 {
+                // The save succeeded even if this best-effort cleanup fails.
+                // Do not report an error after changing the on-disk settings.
+                let _ = std::fs::remove_file(&backup);
+                return Ok(());
+            }
+            let failure = io::Error::last_os_error();
+            if std::fs::symlink_metadata(&backup).is_ok() {
+                // Windows may move the original into the backup name even when
+                // ReplaceFileW returns failure (ERROR_UNABLE_TO_MOVE_REPLACEMENT_2).
+                // Restore only when the destination is absent. Otherwise retain
+                // both copies for manual recovery rather than delete evidence.
+                if std::fs::symlink_metadata(target).is_ok() {
+                    return Err(io::Error::other(
+                        "settings replacement failed with both target and backup present",
+                    ));
+                }
+                if move_without_overwrite_windows(&backup, target).is_err() {
+                    return Err(io::Error::other(
+                        "settings replacement failed; original retained as recovery backup",
+                    ));
+                }
+            } else if std::fs::symlink_metadata(target).is_err() {
+                // Unexpected state: keep the staged JSON if the destination
+                // vanished and no original backup is available.
+                return Err(io::Error::other(
+                    "settings destination disappeared; staged recovery file retained",
+                ));
+            }
+            let _ = std::fs::remove_file(temporary);
+            return Err(failure);
+        }
+        Ok(_) => {
+            // In particular, do not follow or replace a symlink/reparse target.
+            let _ = std::fs::remove_file(temporary);
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "settings destination must be a regular file",
+            ));
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            // No REPLACE_EXISTING flag: a competing first writer must not be
+            // overwritten, even if it appears after symlink_metadata.
+            return match move_without_overwrite_windows(temporary, target) {
+                Ok(()) => Ok(()),
+                Err(error) => {
+                    let _ = std::fs::remove_file(temporary);
+                    Err(error)
+                }
+            };
+        }
+        Err(error) => {
+            let _ = std::fs::remove_file(temporary);
+            return Err(error);
+        }
     }
 }
 
@@ -394,6 +545,61 @@ mod tests {
         drop(lock);
         assert_eq!(std::fs::read(fixture.file()).unwrap(), original);
         assert_eq!(std::fs::read_dir(&fixture.dir).unwrap().count(), 1);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn native_settings_replace_preserves_explicit_windows_acl() {
+        use std::process::Command;
+
+        let fixture = IsolatedSettingsPath::new();
+        Settings::default().save_to_path(&fixture.file()).unwrap();
+
+        // This test alters only its disposable file, never the real AppData.
+        // Copy inherited ACEs to explicit ACEs so the destination no longer
+        // inherits the parent ACL (unlike a newly staged replacement file).
+        let protect = Command::new("icacls")
+            .arg(fixture.file())
+            .arg("/inheritance:d")
+            .output()
+            .expect("icacls is available on Windows");
+        assert!(protect.status.success(), "failed to protect isolated ACL");
+
+        let acl = || {
+            let output = Command::new("icacls")
+                .arg(fixture.file())
+                .output()
+                .expect("read disposable ACL");
+            assert!(output.status.success());
+            String::from_utf8_lossy(&output.stdout).into_owned()
+        };
+        assert!(!acl().contains("(I)"), "fixture must have an explicit ACL");
+
+        let mut changed = Settings::default();
+        changed.keepalive_min = 210;
+        changed.save_to_path(&fixture.file()).unwrap();
+
+        assert_eq!(Settings::load_from_path(&fixture.file()).keepalive_min, 210);
+        assert!(
+            !acl().contains("(I)"),
+            "replacing Settings must not restore inherited Windows ACLs"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_recovery_move_restores_missing_file_without_clobbering_another() {
+        let fixture = IsolatedSettingsPath::new();
+        let prior = fixture.dir.join("prior.json");
+        std::fs::write(&prior, b"old").unwrap();
+        move_without_overwrite_windows(&prior, &fixture.file()).unwrap();
+        assert_eq!(std::fs::read(fixture.file()).unwrap(), b"old");
+        assert!(!prior.exists());
+
+        std::fs::write(&prior, b"older").unwrap();
+        assert!(move_without_overwrite_windows(&prior, &fixture.file()).is_err());
+        assert_eq!(std::fs::read(fixture.file()).unwrap(), b"old");
+        assert_eq!(std::fs::read(prior).unwrap(), b"older");
     }
 
     #[test]
