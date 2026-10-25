@@ -140,6 +140,7 @@ The [source-sync workflow](.github/workflows/source-sync.yml) is present on `mai
 - [Integration provenance, compatibility and safety requirements](docs/INTEGRATION.md)
 - [API smoke-test procedure](docs/LIVE_SMOKE_TEST.md)
 - [Rust dependency advisory review and remaining limitations](docs/RUST_DEPENDENCY_AUDIT_20261025.md)
+- [Installed Windows Companion 0.4.6 QA and upgrade evidence](docs/WINDOWS_COMPANION_0_4_6_QA_20261025.md)
 - [Non-TPU Windows QA and deferred TPU acceptance](docs/NON_TPU_QA_20261025.md)
 - [Kaggle Benchmarks Model Proxy local-only adapter](docs/KAGGLE_MODEL_PROXY.md)
 - [Google Cloud TPU VM setup (paid)](gcp/README.md)
