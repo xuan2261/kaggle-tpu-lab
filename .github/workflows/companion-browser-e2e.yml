@@ -4,6 +4,14 @@ on:
   push:
     branches:
       - 'test/companion-preview-e2e-*'
+      - main
+    paths:
+      - 'src/**'
+      - 'tools/e2e_companion_preview.py'
+      - '.github/workflows/companion-browser-e2e.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
   pull_request:
     branches:
       - main
@@ -23,12 +31,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Install pinned frontend and browser test dependencies

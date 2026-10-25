@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - 'feature/kaggle-model-proxy-*'
+      - main
+    paths:
+      - 'tools/kaggle_model_proxy.py'
+      - 'tests/test_kaggle_model_proxy.py'
+      - 'docs/KAGGLE_MODEL_PROXY.md'
+      - '.github/workflows/model-proxy.yml'
   pull_request:
     branches:
       - main
@@ -21,8 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Compile adapter
@@ -36,8 +42,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Validate credential location and localhost proxy on Windows
