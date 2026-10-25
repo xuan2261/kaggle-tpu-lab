@@ -4,6 +4,13 @@
 (src-tauri/src/state/settings.rs and src-tauri/src/commands/mod.rs).
 Baseline: main@4fb417c62f80597125af9c4a455a9fd1d32bc210.
 
+**Historical snapshot:** the test counts, unsigned installer hashes and
+NOT VERIFIED observations below apply to this **0.4.5 baseline**, not the
+currently installed build. See the later
+[Companion 0.4.6 installed QA](WINDOWS_COMPANION_0_4_6_QA_20261025.md)
+for in-place NSIS/Settings/tray acceptance; live TPU and signed production
+distribution remain separate qualifications.
+
 ## Confirmed defect
 
 Before this patch, the native save_settings command wrote new values into
@@ -69,14 +76,15 @@ reported passing check.
 
 ## Independent acceptance gates
 
-- These tests cover **native Rust persistence**, not real WebView2 dialog
-  interactions. Cancel/Save, focus, tray behavior and DPI still require
-  native end-to-end acceptance on Windows.
+- At this 2026-10-23 baseline, the Rust tests covered **disk persistence**,
+  not real WebView2 interactions. Later Save/Cancel and tray tests are recorded
+  in the 0.4.6 QA; physical DPI and fuller accessibility coverage remain open.
 - At the **2026-10-23 baseline**, file saving was not a replace-style write.
   Later work on the PR added staging/replacement; see
   [the subsequent QA record](NON_TPU_QA_20261025.md). Full power-loss
   durability remains a separate qualification.
-- MSI/NSIS installation, Kaggle TPU jobs and real hosted SSE/tool calling
-  remain separate release gates.
+- At this baseline, MSI/NSIS installation was not exercised; a later
+  **NSIS** upgrade was tested, not a per-machine MSI migration. Kaggle TPU
+  session tests and actual model streaming/tool behavior are still deferred.
 
 No Kaggle credential was read or model inference request sent.

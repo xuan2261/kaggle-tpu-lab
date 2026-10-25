@@ -4,6 +4,11 @@
 dependency-security evidence, not an attestation of every code path or a
 production security certification. No Kaggle inference, TPU or GCP was used.
 
+**Historical lockfile audit:** the advisory counts and SHA-256 values below
+are for the specific lockfiles measured on this date, **not a continuously
+updated dependency report**. The patched dependency set was later included
+in the [installed 0.4.6 QA build](WINDOWS_COMPANION_0_4_6_QA_20261025.md).
+
 ## Method and results
 
 The pre-change lockfile SHA-256 was
@@ -59,7 +64,7 @@ dependency tree where supported.
 1 ignored**; the ignored test requires a live Kaggle session and remains
 deferred. Normal Rust dead-code/unused warnings were still present.
 
-## Next qualification
+## Next qualification identified at audit time
 
 Run GitHub Rust Windows CI on the exact updated lockfile, confirm any
 installer is rebuilt after the lockfile change, and preserve the owner's

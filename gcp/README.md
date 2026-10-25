@@ -1,5 +1,12 @@
 # Running the recipe on a Google Cloud TPU VM
 
+> **Optional, billable, not yet accepted in this integration fork.**
+> This operational recipe comes from [ARahim3's upstream](https://github.com/ARahim3/kaggle-tpu-lab);
+> its startup/performance claims are not newly measured here. It can incur
+> Google Cloud charges and is **not** part of the authorized non-TPU QA.
+> Use only a project with billing and TPU access that you are independently
+> authorized to operate. No GCP VM was provisioned in this fork's recorded QA.
+
 Kaggle's free TPU session is one host with eight TPU v5e chips, a `v5litepod-8`. Google Cloud rents the same machine,
 and its faster sibling the `v6e-8`, by the hour: no queue, no nine-hour cap, a VM you can SSH into. This folder is how
 we run the GLM-5.3-Flash recipe there, which we do daily for development: the same kernel script, the same public
@@ -31,8 +38,9 @@ slow part, 10 to 30 minutes); a persistent disk for them (`DATA_DISK` below) sur
 A queued request waits for capacity instead of failing:
 
 ```bash
-gcloud config set project <your-project>
-Z=<zone with quota>            # e.g. us-east1-d or europe-west4-a for v6e; check the quota page for v5e zones
+PROJECT_ID="<your-authorized-project-id>"
+gcloud config set project "$PROJECT_ID"
+Z="<your-authorized-zone>"     # confirm accelerator availability, region and quota first
 gcloud compute tpus queued-resources create glm-q --zone=$Z --node-id=glm-tpu \
   --accelerator-type=v6e-8 --runtime-version=v2-alpha-tpuv6e --spot
 #   v5e: --accelerator-type=v5litepod-8 --runtime-version=v2-alpha-tpuv5-lite
@@ -47,24 +55,32 @@ Minutes to hours until ACTIVE, depending on the zone's spare capacity. After a p
 ## 2. Set up the VM
 
 ```bash
-git clone https://github.com/ARahim3/kaggle-tpu-lab && cd kaggle-tpu-lab/gcp
+git clone https://github.com/xuan2261/kaggle-tpu-lab.git && cd kaggle-tpu-lab/gcp
 ./setup.sh            # Kaggle's Python 3.12 / JAX 0.10.2 / libtpu pins in a venv, /kaggle paths, the datasets' space
 mkdir -p ~/.kaggle && nano ~/.kaggle/access_token && chmod 600 ~/.kaggle/access_token   # your Kaggle API token
 ./download.sh         # ~130 GB from three public datasets, in parallel; re-run if it is interrupted
 ```
 
-`setup.sh` mounts a 160 GB tmpfs in RAM for the datasets (both hosts have hundreds of GB). To use a persistent disk
-instead, attach one of 200 GB or more to the VM and run `DATA_DISK=/dev/sdb ./setup.sh`; it is formatted when empty
-and mounted at the same place, so `download.sh` only runs once in its lifetime.
+`setup.sh` mounts a tmpfs for datasets by default. The alternative
+`DATA_DISK` option can **format the specified block device if it lacks a
+filesystem** (see [the setup script](setup.sh)), permanently deleting data
+on that device. Do not set `DATA_DISK` without separate storage review and
+authorization. Both VM and attached persistent disk can incur charges.
 
 ## 3. Run
 
 ```bash
-./run.sh              # or: API_KEY=my-key STREAMS=3 PORT=8000 ./run.sh
+./run.sh              # or supply a private key via your shell environment
 tmux attach -t glm    # the server's log; detach with Ctrl-b d
 ```
 
-The kernel runs exactly as on Kaggle, minus the Cloudflare tunnel: weights onto the chips, the speculative-decoding
+**`run.sh` replaces any existing `tmux` session named `glm`** (see its
+[`kill-session` step](run.sh)); it does not stop or delete a Google Cloud TPU
+VM, so billing can continue after the server stops. Do not run it over a
+session you need to preserve, and remove unneeded resources through the
+approved cloud controls.
+
+The upstream kernel runs without the Cloudflare tunnel: weights onto the chips, the speculative-decoding
 drafter from Hugging Face, the warm-up (under a minute when the exported and compiled programs match the chip, ~27 minutes when every program is traced and compiled),
 then the `READY` banner with the endpoint, the API key and the model name. Reach it from your laptop through an SSH
 port forward:

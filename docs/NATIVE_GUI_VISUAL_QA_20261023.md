@@ -6,6 +6,13 @@
 
 **Target:** Tauri Windows Companion 0.4.5, idle/no active Kaggle TPU session.
 
+**Historical snapshot only:** the NOT VERIFIED verdicts below describe
+screenshots and checks available **on 2026-10-23**. A later real installed
+**Companion 0.4.6** passed scoped native Save/Cancel and tray journeys
+([separate QA evidence](WINDOWS_COMPANION_0_4_6_QA_20261025.md)). Neither
+record establishes live TPU inference or full physical DPI/accessibility
+conformance.
+
 ## Evidence provenance
 
 The user supplied three PNG screenshots in the conversation. They are **not
@@ -58,7 +65,7 @@ conformance test.
 - Previous limited live Model Proxy smoke verified non-streaming requests
   through localhost gateway (2/2 HTTP 200), without validating SSE/tool use.
 
-## Next native acceptance checklist
+## Native acceptance checklist at this historical snapshot
 
 1. Re-open the genuine Windows Companion without starting a TPU. Confirm
    Settings opens from **Change** and defaults match its displayed profile.

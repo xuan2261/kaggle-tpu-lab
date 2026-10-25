@@ -1,4 +1,10 @@
-# Integration status — 2026-10-20
+# Source integration provenance — 2026-10-20 baseline
+
+**Historical integration record.** For current Windows Companion acceptance,
+see [installed 0.4.6 QA](WINDOWS_COMPANION_0_4_6_QA_20261025.md); for current
+CI/merge rules and remaining TPU qualifications, see the
+[root README](../README.md#testing-and-release-status) and
+[TPU acceptance TODO](LIVE_SMOKE_TEST.md#todo-deferred-tpu-acceptance-not-a-test-pass).
 
 ## Sources and provenance
 
@@ -14,20 +20,22 @@
 3. Qwen/GLM readiness events no longer carry session API keys to the public ntfy service. The launcher reads its key from local state; on POSIX that state file is created with owner-only permissions.
 4. Rust diagnostic redaction now handles both `sk-` and `glm-` session keys while preserving the `glm-5.3-flash` model identifier.
 
-## Verification commands
+## Verification ownership
 
-```bash
-python -m unittest discover -s tests -v
-python -m compileall -q launch.py qwen38-27b/kernel glm53-flash/kernel glm53-flash/engine/glm53
-npm ci && npm run build
-cargo test --locked --manifest-path src-tauri/Cargo.toml
-```
-
-GitHub Actions runs these checks on integration branch pushes and pull requests. Tests do not launch Kaggle kernels or GCP instances.
+The [Integration checks workflow](../.github/workflows/integration.yml) owns
+the executable build/test commands and its PR/push triggers. GitHub's
+`main` branch-protection settings own the required-status policy; check the
+actual [Actions run](https://github.com/xuan2261/kaggle-tpu-lab/actions)
+for the precise revision instead of relying on a historical PASS summary.
+These jobs use CPU and browser mocks, not a real Kaggle TPU or GCP VM.
 
 ## Release hold
 
-The merge preserves source history but is **not** an approved binary release. A genuine Kaggle TPU test is still needed to confirm Qwen, GLM, model IDs, notebook/kernel parity, SSE streaming, tool calling, start/stop and reconnect behavior. No cloud TPU/GCP execution has been performed during this integration.
+The merge preserves source history but is **not** an approved binary release.
+Genuine Kaggle TPU tests for Qwen/GLM, SSE through supported transports and
+tool-use behavior are [explicitly deferred](LIVE_SMOKE_TEST.md#todo-deferred-tpu-acceptance-not-a-test-pass).
+The integration baseline did not provision GCP. Later installed Windows
+Companion QA is separately documented; it cannot substitute for TPU inference.
 
 The draft model used by the GLM speculative decoder has third-party noncommercial research-use restrictions; review downstream licenses before commercial deployment.
 
@@ -50,5 +58,5 @@ approval-required checks; review them and approve CI before merging.
 See GitHub's Actions token and scheduled-workflow documentation.
 
 The optional live endpoint smoke tool and its loopback-only regression tests
-are documented in docs/LIVE_SMOKE_TEST.md. It cannot prove real TPU health
+are documented in [the live smoke guide](LIVE_SMOKE_TEST.md). It cannot prove real TPU health
 until run against a privately held live endpoint.

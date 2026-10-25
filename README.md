@@ -19,7 +19,7 @@
 This repository brings together **[ARahim3's Kaggle TPU inference recipes](https://github.com/ARahim3/kaggle-tpu-lab)** and the **[Windows desktop Companion by Haz4rdovisk](https://github.com/Haz4rdovisk/kaggle-tpu-lab)**. Run an open model in a Kaggle TPU session and expose an API compatible with OpenAI- or Anthropic-style clients, including Codex CLI, Claude Code and OpenCode.
 
 > [!IMPORTANT]
-> **Source integration is merged, but live QA is incomplete.** [PR #2](https://github.com/xuan2261/kaggle-tpu-lab/pull/2) brought the inference and Companion sources into `main`. Automated tests and browser previews do **not** prove that a Kaggle TPU session or installed Windows app passed end-to-end acceptance. The optional Benchmarks Model Proxy adapter is under separate review.
+> **Integrated source and Windows QA are not a production release.** [PR #2](https://github.com/xuan2261/kaggle-tpu-lab/pull/2) merged the inference and Companion histories; the separate [Benchmarks Model Proxy adapter](docs/KAGGLE_MODEL_PROXY.md) is also integrated. **Companion 0.4.6 has been installed and checked on Windows** for idle Settings/Cancel/Save and tray journeys ([evidence](docs/WINDOWS_COMPANION_0_4_6_QA_20261025.md)); its installers are **unsigned**. Real Qwen/GLM Kaggle TPU, endpoint streaming and tool behavior are still **deferred and unverified** ([acceptance TODO](docs/LIVE_SMOKE_TEST.md#todo-deferred-tpu-acceptance-not-a-test-pass)). Browser mocks and the hosted Model Proxy cannot close that gap.
 
 ## What is included?
 
@@ -49,7 +49,7 @@ The desktop interface connects to the Python launcher; it does not bundle the mo
 
 <p align="center"><em>Left: Qwen preview · Right: GLM preview · Both are mock UI states, not live inference.</em></p>
 
-The Companion's model profiles are separate: Qwen exposes MTP, context, fast-start and asynchronous scheduling options; GLM exposes context, reasoning and stream settings. At 262k context, the integration defaults GLM to **3 streams** to match the newer upstream engine.
+The Companion's model profiles are separate: Qwen exposes MTP, context, fast-start and asynchronous scheduling options; GLM exposes context, reasoning and stream settings. At 262k context, the integration defaults GLM to **3 streams** to match the newer upstream engine. The current app version and installer mode are defined in [Tauri configuration](src-tauri/tauri.conf.json); the [installed Windows QA record](docs/WINDOWS_COMPANION_0_4_6_QA_20261025.md) describes what was actually tested.
 
 ## How it works
 
@@ -72,7 +72,7 @@ A running session is **temporary**, not an always-on free API. Its address and A
 
 ### B. Python CLI
 
-Install Python 3.9+ and the Kaggle CLI, then authenticate using the documented Kaggle credentials method. Do not commit credentials to Git.
+Install **Python 3.11+** for the current [Kaggle CLI](https://pypi.org/project/kaggle/) and authenticate through Kaggle's official account/API instructions. Use the same Python interpreter for the CLI and launcher; do not commit credentials to Git. **Serve submits a real Kaggle kernel and is intentionally not part of the current non-TPU QA.**
 
 ```bash
 git clone https://github.com/xuan2261/kaggle-tpu-lab.git
@@ -84,23 +84,23 @@ python launch.py serve                         # Qwen
 python launch.py serve --model glm53-flash     # GLM
 
 python launch.py status
-python launch.py stop                          # Terminates the active kernel
+python launch.py stop                          # DELETES the tracked kernel; only for your own test session
 ```
 
-Run **one** of the `serve` commands for the model you want. `status` and `stop` are subsequent commands, not required immediately after starting. The launcher may wait for Kaggle to allocate a real TPU; no guaranteed free capacity is implied.
+Run **one** of the `serve` commands for the model you want, only after Kaggle officially grants accelerator access. `status` and `stop` are subsequent commands, not required immediately after starting; `stop` calls Kaggle kernel deletion, so it must never be used to clean up someone else's kernel. Keep command output private: `status` may print the session API key when READY. No free capacity or endpoint uptime is guaranteed.
 
 ### C. Windows desktop development
 
-The Companion requires Git, Node.js, Rust/MSVC build tools, WebView2 and an available Python environment containing the Kaggle CLI. From a checkout of the current repository:
+The Companion requires Git, Node.js, Rust/MSVC build tools, WebView2 and a **Python 3.11+** environment containing the Kaggle CLI. From a checkout of the current repository:
 
 ```powershell
-py -3 -m venv .venv
+py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install kaggle
 npm ci
 npm run tauri:dev
 ```
 
-The application expects the repository checkout (including `launch.py`) and its `.venv` to remain available. An unsigned Windows NSIS/MSI **QA installer** is attached only when the conditional `windows-installers` job runs in [Integration checks](https://github.com/xuan2261/kaggle-tpu-lab/actions/workflows/integration.yml); the job is normally skipped on `fix/*` PRs. It is not a standalone deployment package or signed public release.
+The application expects the repository checkout (including `launch.py`) and its `.venv` to remain available. To build **unsigned QA installers** locally, run `npm run tauri:build` after the build prerequisites are installed; the generated NSIS/MSI paths are determined by [Tauri bundle configuration](src-tauri/tauri.conf.json). In GitHub Actions, installer packaging is [conditional](.github/workflows/integration.yml), **not** a passing job on every PR. The validated per-user upgrade path used **NSIS**, not an MSI migration; see the [0.4.6 installed QA record](docs/WINDOWS_COMPANION_0_4_6_QA_20261025.md). Neither bundle contains the model weights or Python environment, and neither is a signed public release.
 
 Want to inspect the UI without consuming Kaggle quota?
 
@@ -127,9 +127,9 @@ The smoke tool checks authenticated model discovery, chat completions, OpenAI-st
 
 ## Testing and release status
 
-[Integration checks](https://github.com/xuan2261/kaggle-tpu-lab/actions/workflows/integration.yml) include Python contract tests, a mock HTTP API test, the frontend production build, Rust unit tests on Windows and selected GLM JAX CPU tests. QA-only Windows installer packaging runs **conditionally** (check the `windows-installers` job status). These automated checks are not live TPU benchmarks or actual desktop interaction tests.
+[Integration checks](.github/workflows/integration.yml) run for PRs targeting `main` and pushes to `main` or `integration/**`. The [browser-mock workflow](.github/workflows/companion-browser-e2e.yml) and [Model Proxy hermetic workflow](.github/workflows/model-proxy.yml) are path-scoped; [GitHub Actions](https://github.com/xuan2261/kaggle-tpu-lab/actions) owns each revision's actual PASS/SKIPPED result. The protected `main` branch requires a PR and relevant checks; review the current GitHub branch rules rather than inferring approval from one historical run.
 
-Live Qwen/GLM TPU start/stop, reconnect, endpoint, streaming and tool behavior remain **unverified release qualifications**; the owner has explicitly deferred them to the [TPU acceptance TODO](docs/LIVE_SMOKE_TEST.md#todo-deferred-tpu-acceptance-not-a-test-pass) while independent non-TPU work continues. Hosted Kaggle Benchmarks Model Proxy protocol checks do not replace those engine tests. Native Windows installation and Settings/tray have separate QA and owner acceptance evidence, not a substitute for live TPU verification. Review secret handling, external model licensing, current CI and remaining Windows compatibility before any production release.
+Live Qwen/GLM TPU start/stop, reconnect, endpoint, streaming and tool behavior remain **unverified release qualifications**; the owner has explicitly deferred them to the [TPU acceptance TODO](docs/LIVE_SMOKE_TEST.md#todo-deferred-tpu-acceptance-not-a-test-pass). Hosted Kaggle Benchmarks Model Proxy checks do not replace those engine tests. **Installed Windows Companion 0.4.6 idle Save/Cancel/tray QA was completed** ([scope and evidence](docs/WINDOWS_COMPANION_0_4_6_QA_20261025.md)); physical multi-DPI/accessibility validation and signed installer distribution remain separate. Before any production release, also review third-party model licenses, secret handling, the [Rust dependency audit](docs/RUST_DEPENDENCY_AUDIT_20261025.md) and fresh CI.
 
 The [source-sync workflow](.github/workflows/source-sync.yml) is present on `main` and is designed to propose **draft PRs** from both sources. It does not automatically merge, force-push, run Kaggle jobs or provision billable resources; operating it may require GitHub Actions permissions.
 
@@ -151,7 +151,7 @@ If Kaggle reports no working TPU, verify the accelerator, account eligibility an
 <details>
 <summary><strong>Tiếng Việt — tóm tắt</strong></summary>
 
-Dự án kết hợp mã chạy mô hình Qwen/GLM trên Kaggle TPU với phần mềm Companion dành cho Windows. Bạn có thể chạy trực tiếp bằng notebook Kaggle, điều khiển bằng `launch.py` hoặc sử dụng giao diện desktop. Cần tài khoản Kaggle được cấp quyền TPU; hạn mức và thời gian chạy không được bảo đảm. Hai hình giao diện phía trên là **dữ liệu mô phỏng**, còn bản tích hợp đang chờ kiểm thử TPU thực tế và nghiệm thu bộ cài Windows. Xem [hướng dẫn chạy](#quick-start) và [kiểm thử endpoint](docs/LIVE_SMOKE_TEST.md).
+Dự án kết hợp công thức chạy Qwen/GLM trên Kaggle TPU với ứng dụng Companion dành cho Windows. Có thể sử dụng notebook, `launch.py` hoặc giao diện desktop khi có quyền truy cập Kaggle hợp lệ. Hai hình phía trên dùng **dữ liệu mô phỏng**. Companion **0.4.6 đã được cài nâng cấp và kiểm tra Settings/Save/Cancel/tray** trên Windows, nhưng bộ cài **chưa ký số** và chưa phải bản phát hành production. Kiểm thử TPU thật, streaming và tool calling của Qwen/GLM vẫn được **hoãn, chưa PASS**. Xem [hướng dẫn](#quick-start), [nghiệm thu Windows](docs/WINDOWS_COMPANION_0_4_6_QA_20261025.md) và [TODO TPU](docs/LIVE_SMOKE_TEST.md#todo-deferred-tpu-acceptance-not-a-test-pass).
 
 </details>
 
