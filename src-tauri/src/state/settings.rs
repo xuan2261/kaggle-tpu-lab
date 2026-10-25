@@ -603,15 +603,49 @@ mod tests {
             .expect("icacls is available on Windows");
         assert!(protect.status.success(), "failed to protect isolated ACL");
 
-        let acl = || {
-            let output = Command::new("icacls")
-                .arg(fixture.file())
+        // Compare the DACL alone (including inheritance flags and every ACE),
+        // not the owner/group or a localized icacls rendering. Use the built-in
+        // Windows PowerShell/.NET file security API (no module autoload needed).
+        // Pass the path through child-only environment, never shell interpolation.
+        let dacl_sddl = |path: &Path| {
+            let output = Command::new("powershell.exe")
+                .args([
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "$ErrorActionPreference = 'Stop'; [System.IO.File]::GetAccessControl($env:KTL_SETTINGS_ACL_TEST_FILE, [System.Security.AccessControl.AccessControlSections]::Access).GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access)",
+                ])
+                .env("KTL_SETTINGS_ACL_TEST_FILE", path)
                 .output()
-                .expect("read disposable ACL");
-            assert!(output.status.success());
-            String::from_utf8_lossy(&output.stdout).into_owned()
+                .expect("Windows PowerShell is available");
+            assert!(
+                output.status.success(),
+                "failed to read disposable DACL SDDL: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let sddl =
+                String::from_utf8(output.stdout).expect("DACL SDDL contains only UTF-8 characters");
+            let sddl = sddl.trim().to_string();
+            assert!(sddl.starts_with("D:"), "expected DACL-only SDDL");
+            sddl
         };
-        assert!(!acl().contains("(I)"), "fixture must have an explicit ACL");
+        let original_dacl_sddl = dacl_sddl(&fixture.file());
+        let dacl_flags = original_dacl_sddl[2..]
+            .split('(')
+            .next()
+            .expect("DACL SDDL has control flags");
+        assert!(dacl_flags.contains('P'), "fixture DACL must be protected");
+
+        // Negative control: a newly created sibling inherits its DACL from the
+        // directory. The check must distinguish it from the protected target
+        // or it would not detect a replacement that loses the target DACL.
+        let inherited_sibling = fixture.dir.join("inherited-acl-probe.txt");
+        std::fs::write(&inherited_sibling, b"acl probe").unwrap();
+        assert!(
+            dacl_sddl(&inherited_sibling) != original_dacl_sddl,
+            "ACL fixture must distinguish inherited and protected DACLs"
+        );
 
         let changed = Settings {
             keepalive_min: 210,
@@ -621,8 +655,8 @@ mod tests {
 
         assert_eq!(Settings::load_from_path(&fixture.file()).keepalive_min, 210);
         assert!(
-            !acl().contains("(I)"),
-            "replacing Settings must not restore inherited Windows ACLs"
+            dacl_sddl(&fixture.file()) == original_dacl_sddl,
+            "replacing Settings must preserve the exact DACL SDDL, including ACEs and flags"
         );
     }
 
