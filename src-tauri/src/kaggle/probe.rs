@@ -36,7 +36,8 @@ impl EndpointProbe for HttpProbe {
     fn probe(&self, endpoint: &str, api_key: &str) -> bool {
         let url = models_url(endpoint);
         // NOTE: never log `url` failures with headers; redact everything.
-        let res = self.agent
+        let res = self
+            .agent
             .get(&url)
             .set("Authorization", &format!("Bearer {api_key}"))
             .call();
@@ -69,8 +70,17 @@ mod tests {
 
     #[test]
     fn normalizes_qwen_and_glm_endpoint_shapes() {
-        assert_eq!(models_url("https://qwen.example/v1"), "https://qwen.example/v1/models");
-        assert_eq!(models_url("https://glm.example"), "https://glm.example/v1/models");
-        assert_eq!(models_url("https://glm.example/"), "https://glm.example/v1/models");
+        assert_eq!(
+            models_url("https://qwen.example/v1"),
+            "https://qwen.example/v1/models"
+        );
+        assert_eq!(
+            models_url("https://glm.example"),
+            "https://glm.example/v1/models"
+        );
+        assert_eq!(
+            models_url("https://glm.example/"),
+            "https://glm.example/v1/models"
+        );
     }
 }

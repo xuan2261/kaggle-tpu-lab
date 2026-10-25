@@ -85,10 +85,7 @@ fn status_line(snap: &SessionSnapshot) -> String {
 }
 
 fn build_menu(app: &AppHandle, snap: &SessionSnapshot) -> tauri::Result<Menu<tauri::Wry>> {
-    let title_text = snap
-        .model
-        .map(|m| m.tray_name())
-        .unwrap_or("Kaggle TPU");
+    let title_text = snap.model.map(|m| m.tray_name()).unwrap_or("Kaggle TPU");
     let title = MenuItem::with_id(app, "title", title_text, false, None::<&str>)?;
     let status = MenuItem::with_id(app, "status", status_line(snap), false, None::<&str>)?;
     let open_panel = MenuItem::with_id(app, "open-panel", "Open panel", true, None::<&str>)?;
@@ -212,10 +209,7 @@ fn clamp(value: i32, min: i32, max: i32) -> i32 {
     }
 }
 
-fn place_companion_panel(
-    window: &WebviewWindow,
-    anchor: Option<PhysicalPosition<f64>>,
-) {
+fn place_companion_panel(window: &WebviewWindow, anchor: Option<PhysicalPosition<f64>>) {
     let Some(monitor) = monitor_for_anchor(window, anchor) else {
         return;
     };
@@ -243,10 +237,7 @@ fn place_companion_panel(
             work_right - width as i32 - margin,
             work_bottom - height as i32 - margin,
         ),
-        TaskbarEdge::Top => (
-            work_right - width as i32 - margin,
-            work_top + margin,
-        ),
+        TaskbarEdge::Top => (work_right - width as i32 - margin, work_top + margin),
         TaskbarEdge::Right => (
             work_right - width as i32 - margin,
             clamp(
@@ -268,11 +259,7 @@ fn place_companion_panel(
     let _ = window.set_position(PhysicalPosition::new(x, y));
 }
 
-pub fn show_companion_panel(
-    app: &AppHandle,
-    anchor: Option<PhysicalPosition<f64>>,
-    refresh: bool,
-) {
+pub fn show_companion_panel(app: &AppHandle, anchor: Option<PhysicalPosition<f64>>, refresh: bool) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
         place_companion_panel(&w, anchor);
@@ -296,7 +283,10 @@ fn handle_menu(app: &AppHandle, id: &str) {
         "start-tpu" => {
             let app2 = app.clone();
             tauri::async_runtime::spawn(async move {
-                let _ = tauri::async_runtime::spawn_blocking(move || crate::kaggle::start_session(&app2)).await;
+                let _ = tauri::async_runtime::spawn_blocking(move || {
+                    crate::kaggle::start_session(&app2)
+                })
+                .await;
             });
         }
         "stop-tpu" => {
@@ -325,10 +315,11 @@ fn handle_menu(app: &AppHandle, id: &str) {
     }
 }
 
-
 /// Initial tray install (called once from setup).
 pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let snap = app.state::<crate::state::AppState>().snapshot(crate::state::now_secs());
+    let snap = app
+        .state::<crate::state::AppState>()
+        .snapshot(crate::state::now_secs());
     let menu = build_menu(app, &snap)?;
     TrayIconBuilder::with_id(TRAY_ID)
         .tooltip(&tooltip(&snap))

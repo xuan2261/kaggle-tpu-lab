@@ -9,7 +9,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::kaggle;
-use crate::state::{AppState, SessionSnapshot, now_secs};
+use crate::state::{now_secs, AppState, SessionSnapshot};
 
 /// Current sanitized session state (never contains the api key).
 #[tauri::command]
@@ -61,7 +61,9 @@ pub fn open_kaggle(app: AppHandle) -> Result<(), String> {
         .clone()
         .ok_or_else(|| "No kernel known yet".to_string())?;
     let url = format!("https://www.kaggle.com/code/{kernel}");
-    app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 /// Copy the public endpoint (never the key).
@@ -101,7 +103,9 @@ pub fn copy_model_name(app: AppHandle) -> Result<(), String> {
         let settings = st.settings.lock().unwrap();
         m.model.unwrap_or(settings.model).served_name().to_string()
     };
-    app.clipboard().write_text(&model).map_err(|e| e.to_string())
+    app.clipboard()
+        .write_text(&model)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -113,7 +117,10 @@ pub fn copy_connection_setup(app: AppHandle) -> Result<(), String> {
         if !m.endpoint_live {
             return Err("Endpoint is not live yet".to_string());
         }
-        let endpoint = m.endpoint.clone().ok_or_else(|| "No endpoint yet".to_string())?;
+        let endpoint = m
+            .endpoint
+            .clone()
+            .ok_or_else(|| "No endpoint yet".to_string())?;
         let model = m.model.unwrap_or(settings.model);
         (openai_base_url(&endpoint), model.served_name())
     };
@@ -123,10 +130,10 @@ pub fn copy_connection_setup(app: AppHandle) -> Result<(), String> {
         .unwrap()
         .clone()
         .ok_or_else(|| "No API key available yet".to_string())?;
-    let setup = format!(
-        "OPENAI_BASE_URL={endpoint}\nOPENAI_API_KEY={key}\nOPENAI_MODEL={model}"
-    );
-    app.clipboard().write_text(&setup).map_err(|e| e.to_string())
+    let setup = format!("OPENAI_BASE_URL={endpoint}\nOPENAI_API_KEY={key}\nOPENAI_MODEL={model}");
+    app.clipboard()
+        .write_text(&setup)
+        .map_err(|e| e.to_string())
 }
 
 fn openai_base_url(endpoint: &str) -> String {

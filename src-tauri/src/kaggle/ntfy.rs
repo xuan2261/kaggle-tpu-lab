@@ -27,7 +27,9 @@ impl Default for NtfySource {
 impl EventSource for NtfySource {
     fn fetch(&self, topic: &str, since: i64) -> Result<Vec<LauncherEvent>, String> {
         let url = format!("https://ntfy.sh/{topic}/json?poll=1&since={since}");
-        let body = self.agent.get(&url)
+        let body = self
+            .agent
+            .get(&url)
             .call()
             .map_err(|e| crate::security::redact_for_log(&e.to_string()))?
             .into_string()

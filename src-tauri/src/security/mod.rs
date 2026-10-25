@@ -22,10 +22,7 @@ pub fn sanitize_value(v: &mut serde_json::Value) {
         serde_json::Value::Object(map) => {
             let mut remove = Vec::new();
             for k in map.keys().cloned().collect::<Vec<_>>() {
-                if SECRET_KEYS
-                    .iter()
-                    .any(|s| k.eq_ignore_ascii_case(s))
-                {
+                if SECRET_KEYS.iter().any(|s| k.eq_ignore_ascii_case(s)) {
                     remove.push(k);
                 }
             }

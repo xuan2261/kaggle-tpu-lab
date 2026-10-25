@@ -137,13 +137,18 @@ impl AppState {
             remaining_secs: m.remaining_secs(now),
             remaining_estimated: m.remaining_is_estimated(),
             decode_tok_s: m.decode_tok_s,
-            max_model_len: m.max_model_len.or_else(|| profile_matches.then(|| st.selected_context())),
+            max_model_len: m
+                .max_model_len
+                .or_else(|| profile_matches.then(|| st.selected_context())),
             mtp_tokens: if effective_model == ModelId::Qwen38_27b {
-                m.mtp_tokens.or_else(|| profile_matches.then(|| st.qwen.mtp))
+                m.mtp_tokens
+                    .or_else(|| profile_matches.then(|| st.qwen.mtp))
             } else {
                 None
             },
-            text_only: m.text_only.or_else(|| profile_matches.then(|| st.selected_text_only())),
+            text_only: m
+                .text_only
+                .or_else(|| profile_matches.then(|| st.selected_text_only())),
             has_api_key: key.is_some(),
             ntfy_reachable: m.ntfy_reachable,
             activity: m.activity.clone(),
@@ -213,7 +218,11 @@ mod tests {
         use crate::kaggle::testutil::FakeKaggleApi;
         struct NoEvents;
         impl EventSource for NoEvents {
-            fn fetch(&self, _t: &str, _s: i64) -> Result<Vec<crate::state::machine::LauncherEvent>, String> {
+            fn fetch(
+                &self,
+                _t: &str,
+                _s: i64,
+            ) -> Result<Vec<crate::state::machine::LauncherEvent>, String> {
                 Ok(vec![])
             }
         }
@@ -245,7 +254,10 @@ mod tests {
         *st.api_key.lock().unwrap() = Some("sk-SUPERSECRET".into());
         let snap = st.snapshot(1000);
         let json = serde_json::to_string(&snap).unwrap();
-        assert!(!json.contains("SUPERSECRET"), "snapshot leaks the key: {json}");
+        assert!(
+            !json.contains("SUPERSECRET"),
+            "snapshot leaks the key: {json}"
+        );
         assert!(!json.contains("sk-"));
         assert!(snap.has_api_key);
     }

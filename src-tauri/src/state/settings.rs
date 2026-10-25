@@ -82,7 +82,9 @@ impl Settings {
 
     pub fn validate(&self) -> Result<(), String> {
         if !(30..=540).contains(&self.keepalive_min) {
-            return Err("Keepalive must be between 30 and 540 min (Kaggle caps TPU sessions at 9 h)".into());
+            return Err(
+                "Keepalive must be between 30 and 540 min (Kaggle caps TPU sessions at 9 h)".into(),
+            );
         }
 
         match self.model {
@@ -200,7 +202,8 @@ impl Settings {
 
     fn from_json(text: &str) -> Option<Settings> {
         let value: Value = serde_json::from_str(text).ok()?;
-        if value.get("qwen").is_some() || value.get("glm").is_some() || value.get("model").is_some() {
+        if value.get("qwen").is_some() || value.get("glm").is_some() || value.get("model").is_some()
+        {
             let mut parsed: Settings = serde_json::from_value(value).ok()?;
             // The old companion permitted 4-8 GLM streams; at 262k the
             // current upstream engine has room for only three.
@@ -213,13 +216,35 @@ impl Settings {
         // v0.3.2 and earlier stored one Qwen-only profile at the root. Preserve
         // every old field when upgrading to the dual-model schema.
         let mut out = Settings::default();
-        out.project_root = value.get("projectRoot").and_then(Value::as_str).map(str::to_string);
-        out.keepalive_min = value.get("keepaliveMin").and_then(Value::as_i64).unwrap_or(out.keepalive_min);
-        out.qwen.context = value.get("context").and_then(Value::as_i64).unwrap_or(out.qwen.context);
-        out.qwen.mtp = value.get("mtp").and_then(Value::as_i64).unwrap_or(out.qwen.mtp);
-        out.qwen.thinking = value.get("thinking").and_then(Value::as_str).unwrap_or(&out.qwen.thinking).to_string();
-        out.qwen.fast_start = value.get("fastStart").and_then(Value::as_bool).unwrap_or(out.qwen.fast_start);
-        out.qwen.text_only = value.get("textOnly").and_then(Value::as_bool).unwrap_or(out.qwen.text_only);
+        out.project_root = value
+            .get("projectRoot")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        out.keepalive_min = value
+            .get("keepaliveMin")
+            .and_then(Value::as_i64)
+            .unwrap_or(out.keepalive_min);
+        out.qwen.context = value
+            .get("context")
+            .and_then(Value::as_i64)
+            .unwrap_or(out.qwen.context);
+        out.qwen.mtp = value
+            .get("mtp")
+            .and_then(Value::as_i64)
+            .unwrap_or(out.qwen.mtp);
+        out.qwen.thinking = value
+            .get("thinking")
+            .and_then(Value::as_str)
+            .unwrap_or(&out.qwen.thinking)
+            .to_string();
+        out.qwen.fast_start = value
+            .get("fastStart")
+            .and_then(Value::as_bool)
+            .unwrap_or(out.qwen.fast_start);
+        out.qwen.text_only = value
+            .get("textOnly")
+            .and_then(Value::as_bool)
+            .unwrap_or(out.qwen.text_only);
         Some(out)
     }
 
@@ -426,8 +451,15 @@ fn replace_staged_settings(temporary: &Path, target: &Path) -> io::Result<()> {
 }
 
 fn dirs_config() -> Option<PathBuf> {
-    let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).ok()?;
-    Some(PathBuf::from(home).join("AppData").join("Roaming").join("com.lucas.kaggle-tpu-companion"))
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .ok()?;
+    Some(
+        PathBuf::from(home)
+            .join("AppData")
+            .join("Roaming")
+            .join("com.lucas.kaggle-tpu-companion"),
+    )
 }
 
 #[cfg(test)]
@@ -443,10 +475,8 @@ mod tests {
         fn new() -> Self {
             static NEXT: AtomicUsize = AtomicUsize::new(0);
             let id = NEXT.fetch_add(1, Ordering::Relaxed);
-            let dir = std::env::temp_dir().join(format!(
-                "ktl-settings-test-{}-{id}",
-                std::process::id()
-            ));
+            let dir =
+                std::env::temp_dir().join(format!("ktl-settings-test-{}-{id}", std::process::id()));
             std::fs::create_dir(&dir).expect("create a fresh isolated test directory");
             Self { dir }
         }

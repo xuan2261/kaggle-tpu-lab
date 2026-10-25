@@ -27,7 +27,10 @@ pub fn parse_ntfy_body(body: &str) -> Vec<LauncherEvent> {
             .get("time")
             .and_then(|v| v.as_i64())
             .unwrap_or_default();
-        let inner_raw = outer.get("message").and_then(|v| v.as_str()).unwrap_or("{}");
+        let inner_raw = outer
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("{}");
         let mut inner: serde_json::Value = match serde_json::from_str(inner_raw) {
             Ok(v) => v,
             Err(_) => continue,
@@ -78,7 +81,10 @@ not json at all
         let events = parse_ntfy_body(body);
         assert_eq!(events.len(), 1);
         let s = events[0].fields.to_string();
-        assert!(!s.contains("sk-abc"), "secret leaked into parsed event: {s}");
+        assert!(
+            !s.contains("sk-abc"),
+            "secret leaked into parsed event: {s}"
+        );
         assert!(!s.contains("nested-secret"));
         assert!(!s.contains("\"t\""));
     }

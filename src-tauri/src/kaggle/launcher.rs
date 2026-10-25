@@ -169,7 +169,9 @@ impl Launcher {
                     "cannot determine home directory",
                 )
             })?;
-        Ok(Path::new(&home).join(".Dev-projects").join("kaggle-tpu-lab"))
+        Ok(Path::new(&home)
+            .join(".Dev-projects")
+            .join("kaggle-tpu-lab"))
     }
 
     fn launch_py(&self) -> PathBuf {
@@ -181,7 +183,13 @@ impl Launcher {
     pub fn kernel_status(&self, kernel: &str) -> KaggleStatus {
         let out = process::run_capture(
             &self.python,
-            &["-m".into(), "kaggle".into(), "kernels".into(), "status".into(), kernel.into()],
+            &[
+                "-m".into(),
+                "kaggle".into(),
+                "kernels".into(),
+                "status".into(),
+                kernel.into(),
+            ],
             &self.project_root,
             None,
             STATUS_TIMEOUT,
@@ -295,7 +303,10 @@ mod tests {
         .unwrap();
         let st = LocalState::read(&path).expect("glm state");
         assert_eq!(st.model, ModelId::Glm53Flash);
-        assert_eq!(LocalState::raw_api_key(&path).as_deref(), Some("glm-SECRET"));
+        assert_eq!(
+            LocalState::raw_api_key(&path).as_deref(),
+            Some("glm-SECRET")
+        );
     }
 
     #[test]

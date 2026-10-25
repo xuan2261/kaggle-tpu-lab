@@ -44,7 +44,9 @@ pub fn run() {
             let handle = app.handle().clone();
 
             // Resolve the launcher (repo + venv python).
-            let settings_root = crate::state::settings::Settings::load().project_root.clone();
+            let settings_root = crate::state::settings::Settings::load()
+                .project_root
+                .clone();
             let launcher = kaggle::launcher::Launcher::resolve(settings_root.as_deref())
                 .expect("could not resolve the kaggle-tpu-lab launcher (launch.py + .venv)");
 
@@ -53,7 +55,8 @@ pub fn run() {
                 launcher,
                 state_file,
                 Box::new(kaggle::CliKaggleApi(
-                    kaggle::launcher::Launcher::resolve(settings_root.as_deref()).expect("launcher"),
+                    kaggle::launcher::Launcher::resolve(settings_root.as_deref())
+                        .expect("launcher"),
                 )),
                 Box::new(kaggle::NtfySource::default()),
                 Box::new(kaggle::HttpProbe::default()),
@@ -68,17 +71,15 @@ pub fn run() {
             // the tray process keeps running.
             if let Some(window) = app.get_webview_window("main") {
                 let w2 = window.clone();
-                window.on_window_event(move |event| {
-                    match event {
-                        tauri::WindowEvent::CloseRequested { api, .. } => {
-                            let _ = w2.hide();
-                            api.prevent_close();
-                        }
-                        tauri::WindowEvent::Focused(false) => {
-                            let _ = w2.hide();
-                        }
-                        _ => {}
+                window.on_window_event(move |event| match event {
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        let _ = w2.hide();
+                        api.prevent_close();
                     }
+                    tauri::WindowEvent::Focused(false) => {
+                        let _ = w2.hide();
+                    }
+                    _ => {}
                 });
             }
 
