@@ -68,6 +68,7 @@ pub fn redact_for_log(s: &str) -> String {
 }
 
 /// The UI-facing placeholder when a key exists but must not be shown.
+#[cfg(test)]
 pub const MASKED_API_KEY: &str = "••••••••••••••••";
 
 #[cfg(test)]

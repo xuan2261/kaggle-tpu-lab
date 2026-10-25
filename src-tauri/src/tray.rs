@@ -64,7 +64,7 @@ fn tooltip(snap: &SessionSnapshot) -> String {
         TpuPhase::Idle => "IDLE".to_string(),
         TpuPhase::Stopped => "STOPPED".to_string(),
     };
-    line1.push_str("\n");
+    line1.push('\n');
     line1.push_str(&line2);
     line1
 }
@@ -322,7 +322,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .snapshot(crate::state::now_secs());
     let menu = build_menu(app, &snap)?;
     TrayIconBuilder::with_id(TRAY_ID)
-        .tooltip(&tooltip(&snap))
+        .tooltip(tooltip(&snap))
         .icon(icon_for(snap.phase)?)
         .menu(&menu)
         .show_menu_on_left_click(false)

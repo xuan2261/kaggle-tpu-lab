@@ -69,7 +69,6 @@ mod tests {
             fail: false,
         };
         assert_eq!(src.fetch("t", 0).unwrap().len(), 1);
-        let bad: Fake = Default::default();
         let bad = Fake {
             events: vec![],
             fail: true,

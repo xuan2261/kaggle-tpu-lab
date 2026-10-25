@@ -198,6 +198,7 @@ pub struct MachineState {
 }
 
 impl MachineState {
+    #[cfg(test)]
     pub fn reset_for_kernel(&mut self, kernel: &str, topic: Option<String>) {
         self.reset_for_kernel_model(kernel, topic, ModelId::Qwen38_27b);
     }

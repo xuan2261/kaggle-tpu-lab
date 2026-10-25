@@ -422,30 +422,30 @@ fn replace_staged_settings(temporary: &Path, target: &Path) -> io::Result<()> {
                 ));
             }
             let _ = std::fs::remove_file(temporary);
-            return Err(failure);
+            Err(failure)
         }
         Ok(_) => {
             // In particular, do not follow or replace a symlink/reparse target.
             let _ = std::fs::remove_file(temporary);
-            return Err(io::Error::new(
+            Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "settings destination must be a regular file",
-            ));
+            ))
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             // No REPLACE_EXISTING flag: a competing first writer must not be
             // overwritten, even if it appears after symlink_metadata.
-            return match move_without_overwrite_windows(temporary, target) {
+            match move_without_overwrite_windows(temporary, target) {
                 Ok(()) => Ok(()),
                 Err(error) => {
                     let _ = std::fs::remove_file(temporary);
                     Err(error)
                 }
-            };
+            }
         }
         Err(error) => {
             let _ = std::fs::remove_file(temporary);
-            return Err(error);
+            Err(error)
         }
     }
 }
@@ -495,13 +495,21 @@ mod tests {
     #[test]
     fn native_settings_save_and_reload_round_trip_without_user_profile() {
         let fixture = IsolatedSettingsPath::new();
-        let mut saved = Settings::default();
-        saved.model = ModelId::Glm53Flash;
-        saved.keepalive_min = 210;
-        saved.glm.streams = 2;
-        saved.glm.thinking = "high".into();
-        saved.glm.text_only = true;
-        saved.qwen.mtp = 4;
+        let saved = Settings {
+            model: ModelId::Glm53Flash,
+            keepalive_min: 210,
+            glm: GlmSettings {
+                streams: 2,
+                thinking: "high".into(),
+                text_only: true,
+                ..Default::default()
+            },
+            qwen: QwenSettings {
+                mtp: 4,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         saved.validate().unwrap();
         saved.save_to_path(&fixture.file()).unwrap();
 
@@ -605,8 +613,10 @@ mod tests {
         };
         assert!(!acl().contains("(I)"), "fixture must have an explicit ACL");
 
-        let mut changed = Settings::default();
-        changed.keepalive_min = 210;
+        let changed = Settings {
+            keepalive_min: 210,
+            ..Default::default()
+        };
         changed.save_to_path(&fixture.file()).unwrap();
 
         assert_eq!(Settings::load_from_path(&fixture.file()).keepalive_min, 210);
@@ -661,8 +671,10 @@ mod tests {
 
     #[test]
     fn glm_args_use_glm_profile_only() {
-        let mut s = Settings::default();
-        s.model = ModelId::Glm53Flash;
+        let s = Settings {
+            model: ModelId::Glm53Flash,
+            ..Default::default()
+        };
         let joined = s.serve_args().join(" ");
         assert!(joined.contains("--model glm53-flash"));
         assert!(joined.contains("--max-len 262144"));
@@ -697,9 +709,14 @@ mod tests {
 
     #[test]
     fn glm_streams_above_three_are_rejected() {
-        let mut s = Settings::default();
-        s.model = ModelId::Glm53Flash;
-        s.glm.streams = 4;
+        let mut s = Settings {
+            model: ModelId::Glm53Flash,
+            glm: GlmSettings {
+                streams: 4,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         assert!(s.validate().is_err());
         s.glm.streams = 3;
         s.validate().unwrap();
@@ -711,9 +728,14 @@ mod tests {
         q.qwen.mtp = 99;
         assert!(q.validate().is_err());
 
-        let mut g = Settings::default();
-        g.model = ModelId::Glm53Flash;
-        g.glm.thinking = "medium".into();
+        let mut g = Settings {
+            model: ModelId::Glm53Flash,
+            glm: GlmSettings {
+                thinking: "medium".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         assert!(g.validate().is_err());
         g.glm.thinking = "high".into();
         g.glm.streams = 0;

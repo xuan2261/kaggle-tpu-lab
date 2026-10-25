@@ -33,9 +33,6 @@ pub struct LocalState {
     pub topic: String,
     pub model: ModelId,
     pub submitted_at: Option<i64>,
-    pub keepalive_min: Option<i64>,
-    /// Presence only is exposed to the UI; the value stays in Rust memory.
-    pub has_api_key: bool,
 }
 
 impl LocalState {
@@ -54,20 +51,12 @@ impl LocalState {
             .and_then(|t| t.as_str())
             .unwrap_or_default()
             .to_string();
-        let has_api_key = v
-            .get("api_key")
-            .and_then(|k| k.as_str())
-            .map(|k| !k.is_empty())
-            .unwrap_or(false);
         let submitted_at = v.get("submitted_at").and_then(|v| v.as_i64());
-        let keepalive_min = v.get("keepalive_min").and_then(|v| v.as_i64());
         Some(LocalState {
             kernel,
             topic,
             model,
             submitted_at,
-            keepalive_min,
-            has_api_key,
         })
     }
 
@@ -283,8 +272,6 @@ mod tests {
         assert_eq!(st.topic, "ktl-abc");
         assert_eq!(st.model, ModelId::Qwen38_27b);
         assert_eq!(st.submitted_at, None);
-        assert_eq!(st.keepalive_min, None);
-        assert!(st.has_api_key);
         assert_eq!(LocalState::raw_api_key(&path).as_deref(), Some("sk-SECRET"));
 
         // The serialized LocalState must not contain the key.
@@ -350,7 +337,8 @@ mod tests {
         .unwrap();
         let st = LocalState::read(&path).expect("state");
         assert_eq!(st.age_secs(&path, 1_600), Some(600));
-        assert_eq!(st.keepalive_min, Some(480));
+        // Extra launcher metadata must not affect session age or key recovery.
+        assert_eq!(LocalState::raw_api_key(&path).as_deref(), Some("x"));
     }
 
     fn tempfile_dir() -> PathBuf {

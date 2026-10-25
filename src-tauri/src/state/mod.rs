@@ -166,6 +166,7 @@ pub fn now_secs() -> i64 {
 }
 
 /// Format seconds as h:mm:ss (for uptime / remaining readouts).
+#[cfg(test)]
 pub fn format_hms(secs: i64) -> String {
     let secs = secs.max(0);
     let h = secs / 3600;
@@ -213,8 +214,6 @@ mod tests {
 
     #[test]
     fn snapshot_never_contains_api_key() {
-        use crate::kaggle::ntfy::EventSource as _;
-        use crate::kaggle::probe::EndpointProbe as _;
         use crate::kaggle::testutil::FakeKaggleApi;
         struct NoEvents;
         impl EventSource for NoEvents {

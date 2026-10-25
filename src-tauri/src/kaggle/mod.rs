@@ -19,7 +19,6 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::state::machine::{KaggleStatus, MachineState, NoteKind, TpuPhase};
 use crate::state::{now_secs, AppState, SessionSnapshot};
 use launcher::LocalState;
-use probe::EndpointProbe;
 
 pub use ntfy::{EventSource, NtfySource};
 pub use probe::HttpProbe;
@@ -41,6 +40,7 @@ impl KaggleApi for CliKaggleApi {
 #[cfg(test)]
 pub mod testutil {
     use super::*;
+    use crate::kaggle::probe::EndpointProbe;
 
     #[derive(Clone)]
     pub struct FakeKaggleApi {
@@ -56,11 +56,6 @@ pub mod testutil {
         pub fn running() -> Self {
             Self {
                 status: KaggleStatus::Running,
-            }
-        }
-        pub fn complete() -> Self {
-            Self {
-                status: KaggleStatus::Complete,
             }
         }
         pub fn not_found() -> Self {
