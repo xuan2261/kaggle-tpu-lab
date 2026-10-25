@@ -1,5 +1,13 @@
 # GLM-5.3-Flash on a free Kaggle TPU v5e-8
 
+> **Source and evidence boundary:** this recipe and its performance figures
+> are imported from [ARahim3's upstream](https://github.com/ARahim3/kaggle-tpu-lab),
+> not fresh TPU measurements of this integration fork. The
+> [root quick start](../README.md#quick-start) selects this fork's files;
+> [live Qwen/GLM acceptance remains deferred](../docs/LIVE_SMOKE_TEST.md#todo-deferred-tpu-acceptance-not-a-test-pass).
+> Cloudflare **Quick Tunnels do not support SSE**, regardless of local
+> streaming and keep-alive test results.
+
 **Serve GLM-5.3-Flash, a 320B mixture-of-experts model (18B active), on Kaggle's free TPU, with a
 public endpoint that speaks both the OpenAI and the Anthropic API.** Point Claude Code, Codex CLI,
 opencode or `curl` at it.
@@ -27,8 +35,8 @@ model is on the list.
 
 ## Quick start A — as a Kaggle notebook
 
-**Copy & Edit** [the published notebook](https://www.kaggle.com/code/rahim3/glm-5-3-flash-on-a-free-kaggle-tpu-165-tok-s-api) and run it, or upload
-[`notebook/glm53-tpu-serve.ipynb`](notebook/glm53-tpu-serve.ipynb) yourself. Set
+**Copy & Edit** [the upstream published notebook](https://www.kaggle.com/code/rahim3/glm-5-3-flash-on-a-free-kaggle-tpu-165-tok-s-api) for the upstream version, or upload
+[this fork's `notebook/glm53-tpu-serve.ipynb`](notebook/glm53-tpu-serve.ipynb) yourself. Set
 **Accelerator = TPU VM v5e-8**, **Internet = ON**, attach the datasets named in the first cell,
 and run top to bottom. The last cell *is* the server; the endpoint URL and API key appear in its
 output.
@@ -36,19 +44,28 @@ output.
 ## Quick start B — from your terminal
 
 ```bash
-pip install kaggle          # one-time; then put your API token at ~/.kaggle/kaggle.json
-git clone https://github.com/ARahim3/kaggle-tpu-lab
+# Python 3.11+ required for the current Kaggle CLI.
+python -m pip install kaggle
+git clone https://github.com/xuan2261/kaggle-tpu-lab.git
 cd kaggle-tpu-lab
 python launch.py serve --model glm53-flash
 ```
 
+Authenticate through Kaggle's official account/API instructions; never commit
+API credentials. A `serve` command submits a **real** kernel and must only
+be used with Kaggle-granted TPU access. The [TPU tests](../docs/LIVE_SMOKE_TEST.md)
+are intentionally postponed for this fork.
+
 The launcher pushes the kernel, follows its progress and prints the endpoint and key when the
-server is up. `python launch.py status` re-attaches, `python launch.py stop` ends the session.
+server is up. `python launch.py status` checks the tracked session once;
+`python launch.py status -f` follows it. `python launch.py stop` **deletes**
+the tracked kernel and must only be used for your own session.
 
 ## Quick start C — on a Google Cloud TPU VM
 
-The same kernel on a rented `v5litepod-8` (Kaggle's machine) or `v6e-8`, reached through an SSH port forward: see
-[`../gcp/`](../gcp/) for the guide and scripts.
+The upstream recipe also describes an **optional billable** Google Cloud TPU
+VM with SSH forwarding; see the [GCP guide](../gcp/README.md). This fork has
+not independently qualified that deployment route.
 
 ## Using it with coding agents
 
@@ -86,7 +103,7 @@ thinking levels, so those levels mean what they say here.
 
 ## The engine
 
-The engine is about 5,400 lines of JAX and Pallas in [`engine/glm53/`](engine/glm53/), built for
+The JAX/Pallas engine lives in [`engine/glm53/`](engine/glm53/), built for
 this one model rather than as a framework. GLM-5.3-Flash has 45 layers: 34 are KDA linear
 attention (a recurrent state per layer, no KV cache), 11 are multi-head latent attention with a
 sparse top-k indexer, and 42 of them route each token to 8 of 288 experts plus one shared expert.
@@ -175,9 +192,9 @@ minute with a plain message:
   happens, most often on new or not-yet-verified accounts, and nothing in the notebook can fix it.
   Stop the session and start it again; `import jax; print(jax.device_count())` in a fresh cell
   must print 8.
-- **"no Internet from this session"**: turn Internet on in Session options. Kaggle only allows
-  that on verified accounts (a phone number; some accounts are also asked for an identity check through Persona
-  before TPU sessions are handed out).
+- **"no Internet from this session"**: verify account eligibility and available
+  session options through Kaggle's official settings. Some accounts require
+  additional verification. Do not attempt to bypass identity or account checks.
 - **"datasets not attached"**: Add Input in the right sidebar and attach the names it lists (the
   two expert datasets and the serve dataset).
 - **The draft model could not be fetched** (Hugging Face unreachable): the log says so and the server
@@ -189,7 +206,9 @@ minute with a plain message:
   `NEW ENDPOINT` line before giving up.
 - **The server stopped on its own**: it exits after `keepalive_min` minutes (8 hours by default, 90 minutes in the notebook's config)
   and Kaggle ends TPU sessions after nine hours.
-- **Anything else**: the log prints the step it was in and the error; paste that into an issue.
+- **Anything else**: the log prints the failing stage. Share only a **redacted**
+  excerpt in a draft PR, never credentials, a full private notebook log or
+  session state. Issues are disabled in this fork.
 
 ## Credits
 

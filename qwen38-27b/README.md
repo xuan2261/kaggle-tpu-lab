@@ -1,5 +1,14 @@
 # Qwen3.8-27B on a free Kaggle TPU v5e-8
 
+> **Source and evidence boundary:** this recipe, its examples and the
+> performance measurements below originate from
+> [ARahim3's upstream](https://github.com/ARahim3/kaggle-tpu-lab).
+> They have **not been independently reproduced on a real TPU by this
+> integration fork**. For this fork use the [root setup guide](../README.md#quick-start)
+> and [deferred live acceptance checklist](../docs/LIVE_SMOKE_TEST.md#todo-deferred-tpu-acceptance-not-a-test-pass).
+> A temporary Cloudflare Quick Tunnel does **not** support SSE; successful
+> local mock streaming does not prove remote streaming through that route.
+
 **Serve Qwen3.8-27B — a frontier-class 27B hybrid-attention model — on Kaggle's free
 TPU v5e-8, with a public OpenAI-compatible endpoint you can plug into Claude Code,
 Codex CLI, opencode, or anything else that speaks the OpenAI API.**
@@ -10,7 +19,7 @@ native **262,144-token context**, and real speed:
 | What | Measured (TPU v5e-8, bf16, TP=8) |
 |---|---|
 | Decode, single stream | **~130 tok/s** with MTP speculative decoding (78 without, measured before the token-bucket change) |
-| Decode, 8 concurrent streams | **~540 tok/s aggregate** (~107 tok/s each, MTP on) |
+| Decode, 8 concurrent streams | **~540 tok/s aggregate** (MTP on; upstream reported aggregate only) |
 | Decode, 16 concurrent streams | **~900 tok/s aggregate** (with `--mtp 0` — see tuning note below) |
 | Prefill | **10,300 tok/s** — a 105k-token prompt in ~10 s |
 | Native 262k context | works — 225k-token prompt prefilled in ~28 s |
@@ -34,17 +43,19 @@ and a tunnel to the outside world.
 
 ## Quick start A — as a Kaggle notebook
 
-**Copy & Edit** the published Kaggle notebook and Run it —
+**Copy & Edit** the upstream author's published Kaggle notebook and Run it —
 [**kaggle.com/code/rahim3/qwen3-8-27b-bf16-on-kaggle-tpu-130-tok-s-api**](https://www.kaggle.com/code/rahim3/qwen3-8-27b-bf16-on-kaggle-tpu-130-tok-s-api)
-— or upload [`notebook/qwen38-tpu-serve.ipynb`](notebook/qwen38-tpu-serve.ipynb) yourself.
+— or upload [**this fork's** `notebook/qwen38-tpu-serve.ipynb`](notebook/qwen38-tpu-serve.ipynb) yourself.
 Set **Accelerator = TPU VM v5e-8**, **Internet = ON**, attach the two datasets named in
 the first cell, and run top to bottom. The last cell *is* the server — the endpoint URL
 and API key appear in its output.
 
 ## Quick start B — from your terminal
 
-You need Python 3.9+ and a Kaggle account with **TPU access** (Settings → phone-verify
-your account if you haven't; free tier includes ~20 TPU hours/week).
+Use **Python 3.11+** for the current Kaggle CLI and an account that Kaggle
+officially permits to use TPUs. Quota alone does not establish eligibility:
+complete any verification required by Kaggle through its official account
+settings. Do not try to circumvent access or identity checks.
 
 ```bash
 # 1. Kaggle CLI + API token (one-time)
@@ -53,7 +64,7 @@ pip install kaggle
 #   Linux/macOS: ~/.kaggle/kaggle.json     Windows: %USERPROFILE%\.kaggle\kaggle.json
 
 # 2. Get this repo and launch
-git clone https://github.com/ARahim3/kaggle-tpu-lab
+git clone https://github.com/xuan2261/kaggle-tpu-lab.git
 cd kaggle-tpu-lab
 python launch.py serve
 ```
@@ -89,7 +100,7 @@ Useful flags (the default launch serves the **full native 262k context**, 4 conc
 sequences):
 
 ```bash
-python launch.py serve --max-model-len 131072 --max-num-seqs 16  # many parallel streams (~900 tok/s aggregate)
+python launch.py serve --max-model-len 131072 --max-num-seqs 16 --mtp 0  # throughput-tuned upstream profile
 python launch.py serve --reasoning-effort medium                 # server-side default
 python launch.py serve --keepalive-min 120                       # auto-stop after 2 h
 python launch.py serve --text-only                               # skip the vision tower: ~10 min faster, no image inputs
@@ -113,9 +124,9 @@ export OPENAI_API_KEY="sk-<your-key>"
 # model name: qwen3.8-27b
 ```
 
-**Claude Code** — the bundled vLLM also exposes an Anthropic-compatible `/v1/messages`
-(reasoning arrives as proper `thinking` blocks; we verified Claude Code end-to-end
-against it). One gotcha: the server authenticates with a Bearer header only, so use
+**Claude Code** — the upstream recipe also describes an Anthropic-compatible
+`/v1/messages` endpoint and reports an upstream Claude Code check (not retested
+against this fork's live TPU transport). The server uses Bearer authentication, so use
 `ANTHROPIC_AUTH_TOKEN`, **not** `ANTHROPIC_API_KEY`:
 
 ```bash
@@ -180,9 +191,10 @@ folder in the Kaggle UI (Output tab → New Dataset).
 
 ## Good to know / limits
 
-- **One TPU session at a time** per Kaggle account, sessions cap at 9 h, free quota is
-  ~20 TPU-hours/week. The server auto-stops after `--keepalive-min` so a forgotten
-  session doesn't eat your quota.
+- **Capacity and quota are account-dependent**. See your current Kaggle TPU
+  allowance and account eligibility; historical upstream sessions used a
+  roughly nine-hour session limit and a `--keepalive-min` auto-stop. Neither
+  free capacity nor a particular quota is guaranteed.
 - **The endpoint is public** (random cloudflared URL) but protected by the generated
   API key. Treat the URL+key pair like a secret; a new launch gets fresh ones.
 - **Prefix caching is off for now**: vllm-tpu 0.28.0 deliberately disables automatic
@@ -223,17 +235,19 @@ folder in the Kaggle UI (Output tab → New Dataset).
 ## If it fails
 
 - **"this session has no working TPU"** at step 1 (or, in older versions, `Insufficient devices for 2D mesh:
-  found 1, expected 8` / `No jellyfish device found` minutes later): Kaggle started the session without a TPU
-  attached. It happens, most often on new or not-yet-verified accounts, and nothing in the notebook can fix it.
-  Stop the session and start it again; `import jax; print(jax.device_count())` in a fresh cell must print 8.
+  found 1, expected 8` / `No jellyfish device found` minutes later): a TPU
+  was not attached. Check Kaggle's official eligibility, verification and
+  accelerator status before proceeding; do not attempt to bypass an account
+  restriction. A legitimate v5e-8 run should expose eight JAX devices.
 - **Every download fails with "name resolution"** at step 1: Internet is off for the session (Session options),
   or the account is not phone-verified yet, which disables it.
 - **The server exits the moment a client connects, with `AttributeError: __delitem__`**: the client used JSON
   mode / structured outputs while MTP and vLLM's async scheduling are on, a path vllm-tpu 0.28.0 cannot handle.
   Set `"async_scheduling": false` in the config cell (`--no-async-scheduling` from the launcher), or
   `"mtp_tokens": 0`.
-- **Anything else**: the kernel now prints the root cause and the first error block from `vllm.log` when the
-  server dies; paste that into an issue.
+- **Anything else**: the kernel records the cause in `vllm.log`.
+  Remove API keys, tunnel URLs and private data before attaching a **small
+  redacted excerpt** to a draft pull request; Issues are disabled in this fork.
 
 ## Credits
 
