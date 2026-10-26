@@ -28,7 +28,7 @@ permissions:
 
 jobs:
   ui-browser:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v5

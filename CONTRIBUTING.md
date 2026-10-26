@@ -25,6 +25,8 @@ Thanks for wanting to help. A few notes so your time is well spent.
   branch protection determines merge checks. Green CI is **not** approval to
   launch a TPU, use billable cloud infrastructure or publish a signed release.
   Real TPU acceptance is [deferred](docs/LIVE_SMOKE_TEST.md#todo-deferred-tpu-acceptance-not-a-test-pass).
-- **Linux CI runner images:** integration jobs pin their Ubuntu version instead
-  of using the moving `ubuntu-latest` label. Compare both images in CI before
-  changing that pin, and preserve existing required check names.
+- **Linux CI runner images:** integration, browser-mock and Model Proxy jobs pin
+  explicit Ubuntu versions instead of the moving `ubuntu-latest` label. Compare
+  both images in CI before changing a pin, and preserve existing check names.
+  Do not dispatch the write-capable [source-sync workflow](.github/workflows/source-sync.yml)
+  merely to test a runner; use non-writing checks.
