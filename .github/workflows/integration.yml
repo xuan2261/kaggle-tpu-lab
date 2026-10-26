@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   python-contracts:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
@@ -29,7 +29,7 @@ jobs:
         run: bash -n scripts/propose_source_sync.sh
 
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
@@ -87,7 +87,56 @@ jobs:
   glm-cpu-quant:
     # A bounded real JAX CPU layer, never starts TPU, model download or GCP.
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install CPU-only GLM quantization test dependencies
+        run: python -m pip install --disable-pip-version-check "jax[cpu]==0.10.2" gguf numpy pytest ml_dtypes
+      - name: Exercise actual JAX quantization and GGUF reader tests
+        env:
+          PYTHONPATH: glm53-flash/engine
+          XLA_FLAGS: --xla_force_host_platform_device_count=8
+        run: python -m pytest -q -ra glm53-flash/engine/glm53/tests/test_gguf_reader.py glm53-flash/engine/glm53/tests/test_iqquant.py
+
+  # PR-only Ubuntu 26 compatibility probes. These duplicate the three Linux
+  # required jobs without renaming their protected status contexts. Remove
+  # these probes once both images have passed on the same PR revision.
+  ubuntu26-python-contracts:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Compile Python modules
+        run: python -m compileall -q launch.py qwen38-27b/kernel glm53-flash/kernel glm53-flash/engine/glm53
+      - name: Verify integration contracts
+        run: python -m unittest discover -s tests -v
+      - name: Syntax-check source sync automation
+        run: bash -n scripts/propose_source_sync.sh
+
+  ubuntu26-frontend:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+  ubuntu26-glm-cpu-quant:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
