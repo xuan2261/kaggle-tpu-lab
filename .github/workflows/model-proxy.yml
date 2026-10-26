@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   hermetic-adapter:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v5
@@ -48,20 +48,3 @@ jobs:
           python-version: '3.12'
       - name: Validate credential location and localhost proxy on Windows
         run: python -m unittest discover -s tests -p 'test_kaggle_model_proxy.py' -v
-
-  # PR-only compatibility probe: do not touch Kaggle or real credentials.
-  ubuntu26-hermetic-adapter:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-26.04
-    timeout-minutes: 8
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-      - name: Compile adapter
-        run: python -m py_compile tools/kaggle_model_proxy.py tests/test_kaggle_model_proxy.py
-      - name: Run credential, route and quota guard tests
-        run: python -m unittest discover -s tests -p 'test_kaggle_model_proxy.py' -v
-      - name: Assert no Kaggle session or model request was started
-        run: echo "Hermetic loopback-only test suite. No Kaggle credentials or billable calls."

@@ -28,42 +28,6 @@ permissions:
 
 jobs:
   ui-browser:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 12
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          cache: npm
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-      - name: Install pinned frontend and browser test dependencies
-        run: |
-          npm ci
-          python -m pip install --disable-pip-version-check 'playwright==1.57.0'
-      - name: Build tested frontend
-        run: npm run build
-      - name: Run real Chrome against the local mock preview
-        shell: bash
-        run: |
-          set -euo pipefail
-          command -v google-chrome
-          node node_modules/vite/bin/vite.js preview --host 127.0.0.1 --port 41731 --strictPort > "$RUNNER_TEMP/companion-preview.log" 2>&1 &
-          preview_pid=$!
-          trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
-          for i in $(seq 1 30); do
-            if curl --silent --fail http://127.0.0.1:41731/ > /dev/null; then break; fi
-            sleep 1
-          done
-          curl --silent --show-error --fail http://127.0.0.1:41731/ > /dev/null
-          python tools/e2e_companion_preview.py --base-url http://127.0.0.1:41731
-
-  # PR-only compatibility probe: compare the same mock Chrome E2E scenario
-  # on Ubuntu 26.04 before moving the original job to the new runner.
-  ubuntu26-ui-browser:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-26.04
     timeout-minutes: 12
     steps:
