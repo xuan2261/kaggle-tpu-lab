@@ -13,8 +13,10 @@ permissions:
   contents: read
 
 jobs:
+  # Linux runners use an explicit image so ubuntu-latest migrations cannot
+  # silently change the required checks (24.04/26.04 parity: PR #15).
   python-contracts:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
@@ -29,7 +31,7 @@ jobs:
         run: bash -n scripts/propose_source_sync.sh
 
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
@@ -87,7 +89,7 @@ jobs:
   glm-cpu-quant:
     # A bounded real JAX CPU layer, never starts TPU, model download or GCP.
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
