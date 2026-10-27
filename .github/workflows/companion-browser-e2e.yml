@@ -42,7 +42,7 @@ jobs:
       - name: Install pinned frontend and browser test dependencies
         run: |
           npm ci
-          python -m pip install --disable-pip-version-check 'playwright==1.57.0'
+          python -m pip install --disable-pip-version-check 'playwright==1.64.1'
       - name: Build tested frontend
         run: npm run build
       - name: Run real Chrome against the local mock preview
@@ -50,6 +50,8 @@ jobs:
         run: |
           set -euo pipefail
           command -v google-chrome
+          google-chrome --version
+          python -m playwright --version
           node node_modules/vite/bin/vite.js preview --host 127.0.0.1 --port 41731 --strictPort > "$RUNNER_TEMP/companion-preview.log" 2>&1 &
           preview_pid=$!
           trap 'kill "$preview_pid" 2>/dev/null || true' EXIT

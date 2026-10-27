@@ -20,7 +20,7 @@ In another PowerShell terminal in the same repository:
 
 ~~~powershell
 # Install Playwright explicitly only if you don't already have it:
-# python -m pip install playwright==1.57.0
+# python -m pip install playwright==1.64.1
 python tools/e2e_companion_preview.py --base-url http://127.0.0.1:41731
 ~~~
 
@@ -56,6 +56,15 @@ The [browser E2E workflow](../.github/workflows/companion-browser-e2e.yml)
 runs this script in Chrome on GitHub Actions for relevant PRs and changes
 on `main`. It builds the frontend from the triggering revision and has read-only
 repository permissions. It uses **no Kaggle credentials** or model API calls.
+
+On Ubuntu 26.04 CI, the workflow pins Python Playwright `1.64.1`
+([official release, 2026-10-22](https://github.com/microsoft/playwright-python/releases/tag/v1.64.1)),
+which supports Ubuntu 26.04. It prints the Playwright and Chrome versions
+for each CI run. The test intentionally uses the runner's existing
+**Google Chrome Stable** via Playwright's `channel="chrome"`, not bundled
+Chromium; no browser is installed or updated as part of the test. For
+local Windows testing, use an already installed Chrome Stable and do not
+silently replace or modify the user's browser installation.
 
 This browser suite is not an installed Windows Tauri/tray test or a live
 TPU/network test. See the [actual installed Companion 0.4.6 QA](WINDOWS_COMPANION_0_4_6_QA_20261025.md)
