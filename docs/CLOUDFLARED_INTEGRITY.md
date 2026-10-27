@@ -21,14 +21,18 @@ proof that the binary is free from upstream vulnerabilities.
 ## Runtime behavior
 
 - A cached `/tmp/cloudflared` is reused only if its size and SHA-256 match.
-  A mismatched cache is never executed.
+  On POSIX, it must also be owner-executable and not group/other-writable.
+  A cache with matching bytes but unsafe mode is restaged atomically as 0755
+  without a network download. A mismatched cache is never executed.
 - A new download or a Qwen environment-dataset bundle copy is written to a
   temporary file in the cache directory, checked in full, granted executable
   permissions, then atomically renamed into place.
 - Failed, truncated, oversized or mismatched transfers leave existing cache
   bytes unchanged and clean up the staging file.
 - The Qwen notebook prefers a verified bundled executable to avoid unnecessary
-  Internet downloads. GLM only downloads when the tunnel feature is enabled.
+  Internet downloads. A Qwen maintainer bundle build fails unless a verified
+  executable is exported; its manifest records exact version, asset, SHA-256
+  and size. GLM only downloads when the tunnel feature is enabled.
 - The executable is validated again before spawning the tunnel. If it cannot
   be validated, that tunnel must not start. Qwen falls back to its local
   endpoint on tunnel failure; GLM retains its prior startup behavior if the
