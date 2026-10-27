@@ -125,6 +125,16 @@ class ReadOnlyPreflightTests(unittest.TestCase):
                                          "--snapshot-file", str(file)])
             self.assertEqual(status, 1)
             self.assertNotIn(str(file), stderr.getvalue())
+            # Deeply nested but size-bounded JSON can hit Python's recursion
+            # guard. This must fail with the same redacted error, not traceback.
+            file.write_bytes(b"[" * 1500 + b"]" * 1500)
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                status = preflight.main(["--profile", "glm53-flash",
+                                         "--snapshot-file", str(file)])
+            self.assertEqual(status, 1)
+            self.assertIn("PREFLIGHT FAILED", stderr.getvalue())
+            self.assertNotIn(str(file), stderr.getvalue())
 
     def test_pure_code_never_imports_device_or_network_tools(self):
         tree = ast.parse(SOURCE.read_text(encoding="utf-8"))

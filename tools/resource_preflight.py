@@ -205,7 +205,7 @@ def main(argv=None):
         report = build_preflight(args.profile, snapshot)
         print(json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False))
         return 0
-    except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+    except (OSError, UnicodeError, ValueError, RecursionError):
         # Deliberately do not print file paths, input fields or exception text.
         print("PREFLIGHT FAILED: invalid or unsupported snapshot", file=sys.stderr)
         return 1
