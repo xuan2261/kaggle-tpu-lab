@@ -1130,6 +1130,11 @@ def effort_of(req, default=DEFAULT_EFFORT):
 class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.0"      # one request per connection: SSE responses carry no framing for keep-alive
 
+    def version_string(self):
+        # A public /health must not reveal the host Python/BaseHTTP version
+        # via the default Server header.
+        return "KaggleTPU"
+
     def log_message(self, *a):
         pass
 

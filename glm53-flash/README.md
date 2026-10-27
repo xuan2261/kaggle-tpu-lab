@@ -145,6 +145,7 @@ The routed experts are 95 % of the weights, so the whole design follows from whe
 - **GET endpoint authorization.** The exact `/health` path is deliberately
   unauthenticated for Cloudflare tunnel reachability, returning only
   `{"status":"ok"}` (no scheduler, HBM, session or configuration details).
+  Its HTTP `Server` header does not expose the Python/BaseHTTP version.
   `GET /v1/models` requires the configured Bearer API key or `x-api-key`,
   like inference POST routes. Prefix lookalikes are rejected. Offline loopback
   tests verify this source contract; real tunnel/TPU qualification remains

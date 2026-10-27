@@ -72,6 +72,10 @@ class GlmGetAuthContracts(unittest.TestCase):
         status, payload = self.get("/health")
         self.assertEqual(status, 200)
         self.assertEqual(payload, {"status": "ok"})
+        req = Request(f"http://127.0.0.1:{self.server.server_port}/health")
+        with urlopen(req, timeout=3) as response:
+            self.assertEqual(response.headers.get("Server"), "KaggleTPU")
+            self.assertNotIn("Python/", response.headers.get("Server", ""))
         for path in ("/healthz", "/health/metrics", "/health?debug=1"):
             with self.subTest(path=path):
                 self.assertEqual(self.get(path)[0], 404)
