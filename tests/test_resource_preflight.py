@@ -91,6 +91,16 @@ class ReadOnlyPreflightTests(unittest.TestCase):
         self.assertEqual(report["session"]["phase"]["source"], "unavailable_in_snapshot")
         json.dumps(report, allow_nan=False)
 
+        # Even a valid JSON integer far outside floating-point range must
+        # produce a redacted invalid marker rather than an OverflowError.
+        extreme = preflight.build_preflight(
+            "qwen38-27b", {"decodeTokS": 10**400, "maxModelLen": 10**400}
+        )
+        self.assertIsNone(extreme["observed"]["decode_tokens_per_second"]["value"])
+        self.assertEqual(extreme["observed"]["decode_tokens_per_second"]["source"],
+                         "invalid_or_unknown")
+        self.assertIsNone(extreme["configured"]["context_tokens"]["value"])
+
     def test_optional_json_file_is_bounded_and_not_auto_discovered(self):
         with tempfile.TemporaryDirectory() as directory:
             file = Path(directory) / "snapshot.json"

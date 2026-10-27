@@ -53,7 +53,11 @@ def _nonnegative_integer(value):
 
 
 def _nonnegative_number(value):
-    return type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 10**12
+    # math.isfinite() converts Python ints to float; a very large JSON integer
+    # raises OverflowError during conversion instead of failing validation.
+    if type(value) is int:
+        return 0 <= value <= 10**12
+    return type(value) is float and math.isfinite(value) and 0 <= value <= 10**12
 
 
 def _boolean(value):
