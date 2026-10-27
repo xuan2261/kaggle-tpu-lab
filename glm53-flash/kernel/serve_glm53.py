@@ -130,8 +130,8 @@ CLOUDFLARED_URL = (
 _CLOUDFLARED_LOCK = threading.Lock()
 
 
-def cloudflared_verified(path):
-    """Treat downloaded, cached and dataset-supplied executables alike."""
+def cloudflared_bytes_valid(path):
+    """Match official release bytes; do not follow a cached symlink."""
     try:
         if path.is_symlink() or not path.is_file() or path.stat().st_size != CLOUDFLARED_BYTES:
             return False
@@ -144,11 +144,26 @@ def cloudflared_verified(path):
         return False
 
 
+def cloudflared_verified(path):
+    """A trusted executable must have correct bytes and safe POSIX permissions."""
+    if not cloudflared_bytes_valid(path):
+        return False
+    try:
+        mode = path.stat().st_mode
+        return os.name != "posix" or bool(mode & 0o100) and not mode & 0o022
+    except OSError:
+        return False
+
+
 def install_cloudflared(bundle_path=None):
     """Verify exact release bytes before atomic cache replacement and execution."""
     with _CLOUDFLARED_LOCK:
         if cloudflared_verified(CLOUDFLARED):
             return True
+        if cloudflared_bytes_valid(CLOUDFLARED):
+            # Restore safe executable permissions through atomic staging;
+            # never change the shared cache inode in place.
+            bundle_path = CLOUDFLARED
         if bundle_path is not None and (bundle_path.is_symlink() or not bundle_path.is_file()):
             raise ValueError("cloudflared bundle entry is not a regular file")
 
