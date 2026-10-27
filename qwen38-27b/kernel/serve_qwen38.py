@@ -25,6 +25,7 @@ import struct
 import zlib
 import glob
 import gzip
+import hashlib
 import importlib.util
 import json
 import os
@@ -34,6 +35,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import tempfile
 import time
 import urllib.request
 from pathlib import Path
@@ -87,6 +89,75 @@ XLA_CACHE = "/tmp/xla_cache"
 WORK = Path("/kaggle/working") if Path("/kaggle/working").is_dir() else Path("/tmp")
 RAW_LOG = WORK / "vllm.log"          # every line vLLM/pip print, for debugging
 CLOUDFLARED = Path("/tmp/cloudflared")
+# Pinned Cloudflare GitHub release asset (Linux amd64), not /releases/latest.
+# Source: https://github.com/cloudflare/cloudflared/releases/tag/2026.10.4
+# Release asset API digest for cloudflared-linux-amd64, published 2026-10-26.
+CLOUDFLARED_VERSION = "2026.10.4"
+CLOUDFLARED_SHA256 = "ae5e8add7884b0531d66bbca4570d1de491ff6da51e4ebe7eb160cdf241d9e42"
+CLOUDFLARED_BYTES = 40247428
+CLOUDFLARED_URL = (
+    f"https://github.com/cloudflare/cloudflared/releases/download/{CLOUDFLARED_VERSION}/"
+    "cloudflared-linux-amd64"
+)
+_CLOUDFLARED_LOCK = threading.Lock()
+
+
+def cloudflared_verified(path):
+    """Treat downloaded, cached and dataset-supplied executables alike."""
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size != CLOUDFLARED_BYTES:
+            return False
+        digest = hashlib.sha256()
+        with path.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return secrets.compare_digest(digest.hexdigest(), CLOUDFLARED_SHA256)
+    except OSError:
+        return False
+
+
+def install_cloudflared(bundle_path=None):
+    """Verify exact release bytes before atomic cache replacement and execution."""
+    with _CLOUDFLARED_LOCK:
+        if cloudflared_verified(CLOUDFLARED):
+            return True
+        if bundle_path is not None and (bundle_path.is_symlink() or not bundle_path.is_file()):
+            raise ValueError("cloudflared bundle entry is not a regular file")
+
+        # Only a verified staging file may replace /tmp/cloudflared. Never
+        # chmod or execute a partial download or an unverified bundle cache.
+        fd, name = tempfile.mkstemp(prefix=".cloudflared-", dir=str(CLOUDFLARED.parent))
+        staged = Path(name)
+        try:
+            with os.fdopen(fd, "wb") as output:
+                def copy_verified(source):
+                    digest = hashlib.sha256()
+                    size = 0
+                    while True:
+                        chunk = source.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        size += len(chunk)
+                        if size > CLOUDFLARED_BYTES:
+                            raise ValueError("cloudflared asset exceeds pinned size")
+                        output.write(chunk)
+                        digest.update(chunk)
+                    if size != CLOUDFLARED_BYTES or not secrets.compare_digest(
+                        digest.hexdigest(), CLOUDFLARED_SHA256
+                    ):
+                        raise ValueError("cloudflared asset failed pinned size/SHA-256 verification")
+
+                if bundle_path is None:
+                    with urllib.request.urlopen(CLOUDFLARED_URL, timeout=60) as source:
+                        copy_verified(source)
+                else:
+                    with bundle_path.open("rb") as source:
+                        copy_verified(source)
+            staged.chmod(0o755)
+            os.replace(staged, CLOUDFLARED)
+            return True
+        finally:
+            staged.unlink(missing_ok=True)
 T0 = time.time()
 PY_VER = f"{sys.version_info.major}.{sys.version_info.minor}"
 
@@ -189,13 +260,8 @@ def find_input(*patterns):
 
 
 def fetch_cloudflared():
-    if CLOUDFLARED.exists():
-        return
     try:
-        urllib.request.urlretrieve(
-            "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64",
-            CLOUDFLARED)
-        CLOUDFLARED.chmod(0o755)
+        install_cloudflared()
     except Exception as e:
         log(f"(cloudflared download failed: {e})")
 
@@ -348,7 +414,6 @@ def server_died(server, phase, **extra):
 # ---------------- 1. runtime ----------------
 banner(1, "Python runtime", f"vllm-tpu {CFG['vllm_tpu_version']}")
 tpu_check()
-threading.Thread(target=fetch_cloudflared, daemon=True).start()
 bundle_root = find_input(CFG["env_dataset"].split("/")[-1], "qwen38-tpu-env*")
 bundle, manifest = None, {}
 if bundle_root:
@@ -359,9 +424,15 @@ if bundle_root:
         manifest = json.loads(Path(hits[0]).read_text())
     else:
         bundle = bundle_root
-if bundle and Path(bundle, "cloudflared").exists() and not CLOUDFLARED.exists():
-    shutil.copy(Path(bundle, "cloudflared"), CLOUDFLARED)
-    CLOUDFLARED.chmod(0o755)
+if bundle and Path(bundle, "cloudflared").exists() and not cloudflared_verified(CLOUDFLARED):
+    try:
+        install_cloudflared(Path(bundle, "cloudflared"))
+    except (OSError, ValueError) as e:
+        log(f"(cloudflared bundle rejected: {e})")
+# Prefer a verified attached bundle and avoid a redundant download; otherwise
+# continue fetching in parallel with the expensive runtime setup.
+cloudflared_thread = threading.Thread(target=fetch_cloudflared, daemon=True)
+cloudflared_thread.start()
 if manifest and (manifest.get("python") != PY_VER
                  or manifest.get("vllm_tpu_version") != CFG["vllm_tpu_version"]):
     log(f"   env dataset was built for python {manifest.get('python')} / vllm-tpu "
@@ -832,8 +903,11 @@ if CFG["build_bundle"]:
     #  unpack a tar into 100k files anyway — some with '[' in the name, which it rejects)
     sh(["tar", "-cf", str(out / "xla_cache.tar"), "-C", "/tmp", "xla_cache"], "tar")
     fetch_cloudflared()
-    if CLOUDFLARED.exists():
+    if cloudflared_verified(CLOUDFLARED):
         shutil.copy(CLOUDFLARED, out / "cloudflared")
+        if not cloudflared_verified(out / "cloudflared"):
+            (out / "cloudflared").unlink()
+            raise RuntimeError("cloudflared bundle export failed integrity verification")
     pkgs = subprocess.run([sys.executable, "-m", "uv", "pip", "list", "--python", PY,
                            "--format=json"], capture_output=True, text=True)
     try:
@@ -874,10 +948,10 @@ banner(5, "Public URL")
 url = None
 tunnel = None
 for _ in range(60):  # cloudflared download runs in the background from step 1
-    if CLOUDFLARED.exists():
+    if cloudflared_verified(CLOUDFLARED) or not cloudflared_thread.is_alive():
         break
     time.sleep(2)
-if CLOUDFLARED.exists():
+if cloudflared_verified(CLOUDFLARED):
     tunnel = subprocess.Popen([str(CLOUDFLARED), "tunnel", "--url", f"http://127.0.0.1:{PORT}",
                                "--no-autoupdate", "--protocol", "quic"],
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
