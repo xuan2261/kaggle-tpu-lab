@@ -131,6 +131,10 @@ The smoke tool checks authenticated model discovery, chat completions, OpenAI-st
 
 Live Qwen/GLM TPU start/stop, reconnect, endpoint, streaming and tool behavior remain **unverified release qualifications**; the owner has explicitly deferred them to the [TPU acceptance TODO](docs/LIVE_SMOKE_TEST.md#todo-deferred-tpu-acceptance-not-a-test-pass). Hosted Kaggle Benchmarks Model Proxy checks do not replace those engine tests. **Installed Windows Companion 0.4.6 idle Save/Cancel/tray QA was completed** ([scope and evidence](docs/WINDOWS_COMPANION_0_4_6_QA_20261025.md)); physical multi-DPI/accessibility validation and signed installer distribution remain separate. Before any production release, also review third-party model licenses, secret handling, the [Rust dependency audit](docs/RUST_DEPENDENCY_AUDIT_20261025.md) and fresh CI.
 
+For a strictly offline, read-only profile/capability report that does not
+allocate hardware or claim TPU verification, see the
+[resource preflight tool](docs/RESOURCE_PREFLIGHT.md).
+
 The [source-sync workflow](.github/workflows/source-sync.yml) is present on `main` and is designed to propose **draft PRs** from both sources. It does not automatically merge, force-push, run Kaggle jobs or provision billable resources; operating it may require GitHub Actions permissions.
 
 ## Documentation and troubleshooting
