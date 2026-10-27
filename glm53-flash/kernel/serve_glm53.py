@@ -25,6 +25,7 @@ can be turned into the serve dataset ("New dataset" from the kernel output) that
 import base64, collections, glob, hashlib, io, json, os, queue, re, secrets, shutil, subprocess, sys, tarfile, threading, time, urllib.request, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import tempfile
 
 CFG = None  # __LAUNCHER_CONFIG__  (launch.py replaces this line)
 
@@ -116,6 +117,75 @@ CACHE_DIR = WORK / "jax_cache"
 EXPORT_DIR = WORK / "exported"
 SERVE_NAMES = [n for n in [CFG["serve_dataset"], *CFG["serve_fallback"]] if n]
 CLOUDFLARED = Path("/tmp/cloudflared")
+# Pinned Cloudflare GitHub release asset (Linux amd64), not /releases/latest.
+# Source: https://github.com/cloudflare/cloudflared/releases/tag/2026.10.4
+# Release asset API digest for cloudflared-linux-amd64, published 2026-10-26.
+CLOUDFLARED_VERSION = "2026.10.4"
+CLOUDFLARED_SHA256 = "ae5e8add7884b0531d66bbca4570d1de491ff6da51e4ebe7eb160cdf241d9e42"
+CLOUDFLARED_BYTES = 40247428
+CLOUDFLARED_URL = (
+    f"https://github.com/cloudflare/cloudflared/releases/download/{CLOUDFLARED_VERSION}/"
+    "cloudflared-linux-amd64"
+)
+_CLOUDFLARED_LOCK = threading.Lock()
+
+
+def cloudflared_verified(path):
+    """Treat downloaded, cached and dataset-supplied executables alike."""
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size != CLOUDFLARED_BYTES:
+            return False
+        digest = hashlib.sha256()
+        with path.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return secrets.compare_digest(digest.hexdigest(), CLOUDFLARED_SHA256)
+    except OSError:
+        return False
+
+
+def install_cloudflared(bundle_path=None):
+    """Verify exact release bytes before atomic cache replacement and execution."""
+    with _CLOUDFLARED_LOCK:
+        if cloudflared_verified(CLOUDFLARED):
+            return True
+        if bundle_path is not None and (bundle_path.is_symlink() or not bundle_path.is_file()):
+            raise ValueError("cloudflared bundle entry is not a regular file")
+
+        # Only a verified staging file may replace /tmp/cloudflared. Never
+        # chmod or execute a partial download or an unverified bundle cache.
+        fd, name = tempfile.mkstemp(prefix=".cloudflared-", dir=str(CLOUDFLARED.parent))
+        staged = Path(name)
+        try:
+            with os.fdopen(fd, "wb") as output:
+                def copy_verified(source):
+                    digest = hashlib.sha256()
+                    size = 0
+                    while True:
+                        chunk = source.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        size += len(chunk)
+                        if size > CLOUDFLARED_BYTES:
+                            raise ValueError("cloudflared asset exceeds pinned size")
+                        output.write(chunk)
+                        digest.update(chunk)
+                    if size != CLOUDFLARED_BYTES or not secrets.compare_digest(
+                        digest.hexdigest(), CLOUDFLARED_SHA256
+                    ):
+                        raise ValueError("cloudflared asset failed pinned size/SHA-256 verification")
+
+                if bundle_path is None:
+                    with urllib.request.urlopen(CLOUDFLARED_URL, timeout=60) as source:
+                        copy_verified(source)
+                else:
+                    with bundle_path.open("rb") as source:
+                        copy_verified(source)
+            staged.chmod(0o755)
+            os.replace(staged, CLOUDFLARED)
+            return True
+        finally:
+            staged.unlink(missing_ok=True)
 T0 = time.time()
 LOG_LINES = []
 
@@ -255,10 +325,9 @@ if not CFG["skip_runtime"]:
     elif not Path("glm53").is_dir():
         sys.exit("no glm53/ package next to this script and nothing embedded — run the notebook's engine cell first")
 
-if CFG["tunnel"] and not CLOUDFLARED.exists():
-    urllib.request.urlretrieve("https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64", CLOUDFLARED)
-    CLOUDFLARED.chmod(0o755)
-    log("   cloudflared downloaded")
+if CFG["tunnel"]:
+    install_cloudflared()
+    log(f"   cloudflared {CLOUDFLARED_VERSION} verified")
 
 import numpy as np                      # noqa: E402  (after the runtime pins: libtpu must be installed before jax loads)
 import jax, jax.numpy as jnp            # noqa: E402
@@ -1331,6 +1400,8 @@ TUN = [None]
 def start_tunnel(attempts=3, wait_s=90):
     """A cloudflared quick tunnel -> its public URL, or None. Registration sometimes fails or hangs (seen in our runs):
     an attempt that prints no URL within `wait_s` is killed and retried."""
+    if not cloudflared_verified(CLOUDFLARED):
+        raise RuntimeError("cloudflared integrity failed before tunnel execution")
     pat = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
     for i in range(attempts):
         tun = subprocess.Popen([str(CLOUDFLARED), "tunnel", "--url", f"http://127.0.0.1:{PORT}", "--no-autoupdate"],

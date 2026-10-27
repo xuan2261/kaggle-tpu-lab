@@ -30,3 +30,7 @@ Thanks for wanting to help. A few notes so your time is well spent.
   both images in CI before changing a pin, and preserve existing check names.
   Do not dispatch the write-capable [source-sync workflow](.github/workflows/source-sync.yml)
   merely to test a runner; use non-writing checks.
+- **Cloudflare Tunnel binary:** Qwen and GLM kernels and their standalone notebooks
+  must retain the same pinned `cloudflared` release/digest/size. See the
+  [binary integrity and update procedure](docs/CLOUDFLARED_INTEGRITY.md).
+  Integrity tests are offline, not evidence that a public tunnel or SSE is working.
