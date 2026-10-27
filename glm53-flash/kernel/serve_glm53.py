@@ -1148,21 +1148,25 @@ class H(BaseHTTPRequestHandler):
 
     def _auth(self):
         if not API_KEY:
-            return True
+            return False
         h = self.headers.get("Authorization", ""); k = self.headers.get("x-api-key", "")
-        return h == f"Bearer {API_KEY}" or k == API_KEY
+        # Compare encoded bytes so malformed, non-ASCII headers cannot make
+        # constant-time comparison throw and expose a handler error.
+        expected = API_KEY.encode("utf-8", "surrogatepass")
+        return (secrets.compare_digest(h.encode("utf-8", "surrogatepass"), b"Bearer " + expected)
+                or secrets.compare_digest(k.encode("utf-8", "surrogatepass"), expected))
 
     def _sse(self, obj, event=None):
         self._raw((f"event: {event}\n" if event else "") + f"data: {json.dumps(obj)}\n\n")
 
     def do_GET(self):
-        if self.path.startswith("/health"):
-            return self._json(200, {"status": "ok", "model": MODEL, "layers": cfg.n_layers, "max_len": eng.max_len, "max_streams": MAX_STREAMS,
-                                    "max_sets": MAX_SETS, "max_queue": MAX_QUEUE, "piece": SCHED.piece, "buckets": list(eng.PREFILL_BUCKETS),
-                                    "active": len(SCHED.active), "pending": len(SCHED.pending),
-                                    "live_contexts": len(SCHED.live), "hbm_free_gb": SCHED.free_gb(),
-                                    "hbm_free_in_use_gb": SCHED.in_use_free_gb(), **STATE})
-        if self.path.startswith("/v1/models"):
+        # The public Quick Tunnel reachability probe needs a credential-free
+        # health check, not scheduler/heap state or model configuration.
+        if self.path == "/health":
+            return self._json(200, {"status": "ok"})
+        if self.path == "/v1/models":
+            if not self._auth():
+                return self._json(401, {"error": {"type": "authentication_error", "message": "bad api key"}})
             return self._json(200, {"object": "list", "data": [{"id": MODEL, "object": "model"}]})
         self._json(404, {"error": "not found"})
 
