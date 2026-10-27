@@ -44,13 +44,17 @@ def json_request(url, token, method="GET", body=None, timeout=60, extra_headers=
         raise RuntimeError("Network error or timeout: " + type(err).__name__) from None
 
 
-def iter_sse_data(response):
+def iter_sse_data(response, deadline=None):
     """Yield one SSE data payload as each complete HTTP response line arrives.
 
     This deliberately does not buffer the entire body. It does not by itself
     qualify a remote tunnel for incremental SSE transport.
     """
     for chunk in response:
+        # Check the wall-clock limit even for SSE comments/blank/non-data
+        # lines, which a remote peer could otherwise send indefinitely.
+        if deadline is not None and time.monotonic() > deadline:
+            raise RuntimeError("Streaming exceeded the time limit")
         line = chunk.decode("utf-8", "replace").strip()
         if line.startswith("data:"):
             yield line[5:].strip()
@@ -67,7 +71,7 @@ def sse_request(url, token, model, timeout):
     start = time.monotonic()
     try:
         with urlopen(request, timeout=timeout) as response:
-            for data in iter_sse_data(response):
+            for data in iter_sse_data(response, start + timeout):
                 if time.monotonic() - start > timeout:
                     raise RuntimeError("Streaming exceeded the time limit")
                 if data == "[DONE]":

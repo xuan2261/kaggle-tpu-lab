@@ -106,6 +106,18 @@ class SmokeTests(unittest.TestCase):
             server.server_close()
             thread.join(timeout=3)
 
+    def test_sse_comment_heartbeat_cannot_bypass_wall_clock_deadline(self):
+        # Deterministic synthetic clock: no sleeping or live endpoint.
+        # The old iterator ignored these lines and reported only
+        # "Incomplete OpenAI SSE stream" after EOF, despite timeout.
+        comments = io.BytesIO(b": heartbeat\n" * 4)
+        with patch.object(smoke, "urlopen", return_value=comments), patch.object(
+            smoke.time, "monotonic", side_effect=[0.0, 0.2, 1.2]
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Streaming exceeded the time limit"):
+                smoke.sse_request("http://127.0.0.1/mock", "unit-test-only",
+                                  "glm-5.3-flash", 1)
+
     def test_sse_incomplete_and_error_events_fail_closed(self):
         fixtures = [
             (b'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n',
