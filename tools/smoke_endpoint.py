@@ -44,6 +44,18 @@ def json_request(url, token, method="GET", body=None, timeout=60, extra_headers=
         raise RuntimeError("Network error or timeout: " + type(err).__name__) from None
 
 
+def iter_sse_data(response):
+    """Yield one SSE data payload as each complete HTTP response line arrives.
+
+    This deliberately does not buffer the entire body. It does not by itself
+    qualify a remote tunnel for incremental SSE transport.
+    """
+    for chunk in response:
+        line = chunk.decode("utf-8", "replace").strip()
+        if line.startswith("data:"):
+            yield line[5:].strip()
+
+
 def sse_request(url, token, model, timeout):
     body = {"model": model, "messages": [{"role": "user", "content": "Say OK."}],
             "max_tokens": 40, "stream": True}
@@ -55,13 +67,9 @@ def sse_request(url, token, model, timeout):
     start = time.monotonic()
     try:
         with urlopen(request, timeout=timeout) as response:
-            for chunk in response:
+            for data in iter_sse_data(response):
                 if time.monotonic() - start > timeout:
                     raise RuntimeError("Streaming exceeded the time limit")
-                line = chunk.decode("utf-8", "replace").strip()
-                if not line.startswith("data:"):
-                    continue
-                data = line[5:].strip()
                 if data == "[DONE]":
                     ended = True
                     break
@@ -88,7 +96,9 @@ def run_smoke(base_url, token, model, timeout=90, check_tools=True):
     ids = [m.get("id") for m in models.get("data", []) if isinstance(m, dict)]
     if model not in ids:
         raise RuntimeError("Model ID was not found at /v1/models")
-    results.append("Authenticated models")
+    # Some engines expose /v1/models publicly; passing Bearer here does not
+    # prove that the server enforces authentication on this read-only route.
+    results.append("Model ID advertised (Bearer supplied)")
 
     chat = {"model": model, "messages": [{"role": "user", "content": "Say OK."}],
             "max_tokens": 40, "stream": False}
